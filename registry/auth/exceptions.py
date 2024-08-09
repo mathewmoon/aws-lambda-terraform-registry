@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+
 class AuthError(Exception):
     def __init__(self, *args, status=401, **kwargs):
         self.status = status

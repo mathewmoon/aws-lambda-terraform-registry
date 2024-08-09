@@ -5,18 +5,39 @@ from requests_auth_aws_sigv4 import AWSSigV4
 import requests
 
 
-parser = ArgumentParser(description="Get a KMS token to use for registry authentication.")
-parser.add_argument("cmd", type=str, help="The command to run.", choices=["token", "config", "env"])
-parser.add_argument("--time", "-T", type=int, default=300, help="The time in seconds until the token expires.")
-parser.add_argument("--registry-host", "-r", type=str, help="The hostname of the registry.")
+parser = ArgumentParser(
+    description="Get a KMS token to use for registry authentication."
+)
+parser.add_argument(
+    "cmd", type=str, help="The command to run.", choices=["token", "config", "env"]
+)
+parser.add_argument(
+    "--time",
+    "-T",
+    type=int,
+    default=300,
+    help="The time in seconds until the token expires.",
+)
+parser.add_argument(
+    "--registry-host", "-r", type=str, help="The hostname of the registry."
+)
 parser.add_argument("--token-host", "-t", type=str, help="The token endpoint to use.")
-parser.add_argument("--service", type=str, help="Choose 'execute-api' for AWS API Gateway and Lambda for direct Lambda URL invocation.", default="execute-api")
+parser.add_argument(
+    "--service",
+    type=str,
+    help="Choose 'execute-api' for AWS API Gateway and Lambda for direct Lambda URL invocation.",
+    default="execute-api",
+)
 args = parser.parse_args()
 
 
 def make_token():
     url = f"https://{args.token_host}/token"
-    res = requests.get(url, auth=AWSSigV4(service=args.service), params={"expiration_seconds": args.time} )
+    res = requests.get(
+        url,
+        auth=AWSSigV4(service=args.service),
+        params={"expiration_seconds": args.time},
+    )
     return res.text
 
 
@@ -26,7 +47,7 @@ def make_env_var():
         exit(1)
     token = make_token()
     hostname = args.registry_host.replace(".", "_").replace("-", "__").lower()
-    var = f"TF_TOKEN_{hostname}=\"{token}\""
+    var = f'TF_TOKEN_{hostname}="{token}"'
 
     return var
 
@@ -41,7 +62,7 @@ def make_config():
 credentials "{args.host}" {{
     token = "{token}"
 }}
-""" 
+"""
     return config
 
 

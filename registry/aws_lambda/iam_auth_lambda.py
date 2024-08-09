@@ -4,7 +4,7 @@ from json import dumps
 from aws_lambda_powertools.event_handler.api_gateway import Response
 
 from . import make_lambda_response
-from .. import routes 
+from .. import routes
 from ..auth.bearer import IAMBearerAuth
 from ..auth.exceptions import AuthError
 from ..config import (
@@ -13,8 +13,14 @@ from ..config import (
     MAX_TOKEN_EXPIRATION_WINDOW,
 )
 
+
 def parse_assumed_role(role_arn):
-    role_arn_with_session = role_arn.replace(":sts:", ":iam:").replace(":assumed-role/", ":role/")
+    """
+    Handles parsing of assumed role ARNs to IAM role ARNs.
+    """
+    role_arn_with_session = role_arn.replace(":sts:", ":iam:").replace(
+        ":assumed-role/", ":role/"
+    )
     role_parts = role_arn_with_session.split("/")
     role_parts.pop(-1)
 
@@ -39,7 +45,9 @@ def get_token() -> str:
     user_arn = authorizor["iam"]["userArn"]
     role_arn = parse_assumed_role(user_arn)
     params = APP.current_event.get("queryStringParameters", {})
-    expiration_seconds = int(params.get("expiration_seconds", MAX_TOKEN_EXPIRATION_WINDOW))
+    expiration_seconds = int(
+        params.get("expiration_seconds", MAX_TOKEN_EXPIRATION_WINDOW)
+    )
 
     token = IAMBearerAuth.make_token(
         role_arn=role_arn,
@@ -67,8 +75,7 @@ def handler(event, ctx):
         return res
     except AuthError as e:
         LOGGER.info(dumps(e.response, indent=2, default=lambda x: str(x)))
-        return make_lambda_response(status=e.status, body=str(e) )
+        return make_lambda_response(status=e.status, body=str(e))
     except Exception as e:
         LOGGER.exception(e)
         return make_lambda_response(status=500, body="Internal Server Error...")
-

@@ -29,7 +29,6 @@ def discovery() -> dict:
     return data
 
 
-
 @APP.get(routes.versions, middlewares=[download_auth])
 def get_versions(tenant, namespace, name) -> Response:
     """
@@ -43,11 +42,7 @@ def get_versions(tenant, namespace, name) -> Response:
     Returns:
         dict: The response containing the versions of the module.
     """
-    module = Module(
-        tenant=tenant,
-        namespace=namespace,
-        name=name
-    )
+    module = Module(tenant=tenant, namespace=namespace, name=name)
     versions = module.versions
 
     if not versions:
@@ -59,9 +54,7 @@ def get_versions(tenant, namespace, name) -> Response:
 
 
 @APP.get(routes.download_module, middlewares=[download_auth])
-def download_module(
-    tenant, namespace, name, version
-) -> Response:
+def download_module(tenant, namespace, name, version) -> Response:
     """
     Endpoint for downloading a specific version of a Terraform module.
 
@@ -82,7 +75,10 @@ def download_module(
     link = module.presigned_download(version=version)
 
     if link is None:
-        return Response(status_code=404, body=f"Module {module.module_path} version {version} not found")
+        return Response(
+            status_code=404,
+            body=f"Module {module.module_path} version {version} not found",
+        )
 
     return Response(status_code=204, headers={"X-Terraform-Get": link})
 
@@ -118,8 +114,7 @@ def handler(event, ctx):
         return res
     except AuthError as e:
         LOGGER.info(dumps(e.response, indent=2, default=lambda x: str(x)))
-        return make_lambda_response(status=e.status, body=str(e) )
+        return make_lambda_response(status=e.status, body=str(e))
     except Exception as e:
         LOGGER.exception(e)
         return make_lambda_response(status=500, body="Internal Server Error...")
-

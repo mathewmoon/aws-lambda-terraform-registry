@@ -16,7 +16,9 @@ RESOLVER_TYPE = environ.get("RESOLVER_TYPE", "FUNCTION_URL")
 MAX_TOKEN_EXPIRATION_WINDOW = 60000
 
 if RESOLVER_TYPE == "FUNCTION_URL":
-    from aws_lambda_powertools.event_handler import LambdaFunctionUrlResolver as Resolver
+    from aws_lambda_powertools.event_handler import (
+        LambdaFunctionUrlResolver as Resolver,
+    )
 elif RESOLVER_TYPE == "API_GATEWAY_HTTP":
     from aws_lambda_powertools.event_handler import APIGatewayHttpResolver as Resolver
 elif RESOLVER_TYPE == "API_GATEWAY_REST":
@@ -36,5 +38,4 @@ IAM_AUTH_KMS_KEY = environ.get("IAM_AUTH_KMS_KEY", "alias/terraform-registry")
 if not environ.get("AWS_LAMBDA_FUNCTION_NAME"):
     LOGGER.addHandler(StreamHandler(stdout))
 
-LOGGER.setLevel(environ.get("LOG_LEVEL", "INFO")) 
-
+LOGGER.setLevel(environ.get("LOG_LEVEL", "INFO"))

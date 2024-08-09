@@ -3,11 +3,14 @@
 from aws_lambda_powertools.event_handler.api_gateway import Response
 from aws_lambda_powertools.event_handler.middlewares import NextMiddleware
 
-from .bearer import get_auth_type
+from .bearer import Auth, get_auth_type
 from .exceptions import AuthError
 
 
 def parse_path(event: dict) -> dict:
+    """
+    Returns the tenant and namespace from the path.
+    """
     try:
         path = event["rawPath"]
     except KeyError:
@@ -18,13 +21,20 @@ def parse_path(event: dict) -> dict:
 
 
 def get_header(event: dict, name: str) -> str:
+    """
+    Returns the value of a specific header by name.
+    """
     try:
         return event["headers"][name]
     except KeyError:
         return event["headers"][name.lower()]
 
 
-def authenticate(event):
+def authenticate(event: dict) -> Auth:
+    """
+    Initializes an Auth object based on the token in the Authorization header
+    and returns it.
+    """
     tenant, _ = parse_path(event)
 
     try:
@@ -69,7 +79,10 @@ def download_auth(app: object, next_middleware: NextMiddleware) -> Response:
     auth = authenticate(event)
 
     if not (auth and auth.can_download(namespace)):
-        raise AuthError(f"Not authorized to download from namespace {namespace} in tenant {tenant}", status=403)
+        raise AuthError(
+            f"Not authorized to download from namespace {namespace} in tenant {tenant}",
+            status=403,
+        )
 
     return next_middleware(app)
 
