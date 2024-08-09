@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "lambda-terraform-module-registry"
-version = "0.2.2"
+version = "0.2.3"
 description = "A Terraform module registry implemented as an AWS Lambda Function"
 authors = ["Mathew Moon <me@mathewmoon.net>"]
 packages = [{include = "registry", from = "."}]

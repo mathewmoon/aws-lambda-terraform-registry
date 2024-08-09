@@ -3,6 +3,7 @@ from json import dumps
 
 from aws_lambda_powertools.event_handler.api_gateway import Response
 
+from . import make_lambda_response
 from ..models import Module
 from ..config import (
     APP,
@@ -108,6 +109,8 @@ def handler(event, ctx):
         Any: The response from the Mangum handler.
     """
     LOGGER.info(dumps(event, indent=2, default=lambda x: str(x)))
+    LOGGER.info(APP)
+    LOGGER.info(type(APP))
 
     try:
         res = APP.resolve(event, ctx)
@@ -115,8 +118,8 @@ def handler(event, ctx):
         return res
     except AuthError as e:
         LOGGER.info(dumps(e.response, indent=2, default=lambda x: str(x)))
-        return e.response
+        return make_lambda_response(status=e.status, body=str(e) )
     except Exception as e:
         LOGGER.exception(e)
-        return {"status_code":500, "body": "Internal Server Error"}
+        return make_lambda_response(status=500, body="Internal Server Error...")
 

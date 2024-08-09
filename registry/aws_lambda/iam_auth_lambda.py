@@ -3,6 +3,7 @@ from json import dumps
 
 from aws_lambda_powertools.event_handler.api_gateway import Response
 
+from . import make_lambda_response
 from .. import routes 
 from ..auth.bearer import IAMBearerAuth
 from ..auth.exceptions import AuthError
@@ -66,8 +67,8 @@ def handler(event, ctx):
         return res
     except AuthError as e:
         LOGGER.info(dumps(e.response, indent=2, default=lambda x: str(x)))
-        return e.response
+        return make_lambda_response(status=e.status, body=str(e) )
     except Exception as e:
         LOGGER.exception(e)
-        return {"status_code": 500, "body": "Internal Server Error"}
+        return make_lambda_response(status=500, body="Internal Server Error...")
 

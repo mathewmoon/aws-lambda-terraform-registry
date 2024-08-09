@@ -4,12 +4,13 @@ from os import environ
 from sys import stdout
 
 from boto3 import client, resource
+from botocore.config import Config
 
 
-TABLE_NAME = environ.get("TABLE", "terraform-modules")
+TABLE_NAME = environ.get("TABLE", "terraform-registry")
 TABLE = resource("dynamodb").Table(TABLE_NAME)
 REGISTRY_BUCKET = environ.get("REGISTRY_BUCKET", "hingehealth-sec-junkdrawer")
-S3 = client("s3")
+S3 = client("s3", config=Config(signature_version="s3v4"))
 KMS = client("kms")
 RESOLVER_TYPE = environ.get("RESOLVER_TYPE", "FUNCTION_URL")
 MAX_TOKEN_EXPIRATION_WINDOW = 60000
