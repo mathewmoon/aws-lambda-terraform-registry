@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "lambda-terraform-module-registry"
+version = "0.2.2"
+description = "A Terraform module registry implemented as an AWS Lambda Function"
+authors = ["Mathew Moon <me@mathewmoon.net>"]
+packages = [{include = "registry", from = "."}]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+requests-auth-aws-sigv4 = "^0.7.0"
+
+[tool.poetry.group.dev.dependencies]
+aws_lambda_powertools = "^2.43.0"
+pydantic = "^2.6.4"
+boto3 = "^1.34.152"
+
+[tool.pytest.ini_options]
+xfail_strict = true
+
+[tool.poetry.scripts]
+get-registry-token = "registry.cli.iam_token_fetcher:main"
+manage-registry-permissions = "registry.cli.iam_permissions_manager:main"
+
+[build-system]
+requires = ["poetry-core>=1.7.0"]
+build-backend = "poetry.core.masonry.api"
