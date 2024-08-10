@@ -6,7 +6,7 @@ This repository contains all of the pieces needed to both host, and use, a Terra
 * Source: `pip3 install lambda-terraform-module-registry`
 * Source and able to make live-edits: `cd <repo root>; pip3 install --editable .`
 
-Local Development:
+Dependencies for local development:
 * aws_lambda_powertools
 * pydantic
 * boto3
