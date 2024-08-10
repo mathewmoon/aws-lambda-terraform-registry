@@ -1,27 +1,43 @@
 #!/usr/bin/env python3
-from argparse import ArgumentParser
+from argparse import ArgumentParser, RawTextHelpFormatter
 from requests_auth_aws_sigv4 import AWSSigV4
 
 import requests
 
 
 parser = ArgumentParser(
-    description="Get a KMS token to use for registry authentication."
+    description="Get a Bearer token to use for registry authentication by Authing with AWS IAM.",
+    formatter_class=RawTextHelpFormatter,
 )
 parser.add_argument(
-    "cmd", type=str, help="The command to run.", choices=["token", "config", "env"]
+    "cmd",
+    type=str,
+    help="""
+    token: Get a raw token
+    config: Get a Terraform config snippet suitable for use in a Terraform RC file
+    env: Get an environment variable suitable for use in a shell script. EG: Prints `TF_TOKEN_myregistry_com=xxxxxxxxxx` to stdout
+    """,
+    choices=["token", "config", "env"],
 )
 parser.add_argument(
     "--time",
     "-T",
     type=int,
     default=300,
-    help="The time in seconds until the token expires.",
+    help="The number of seconds until the token expires. Default is 300 seconds.",
 )
 parser.add_argument(
-    "--registry-host", "-r", type=str, help="The hostname of the registry."
+    "--registry-host",
+    "-r",
+    type=str,
+    help="The hostname of the registry. Do not include the protocol.",
 )
-parser.add_argument("--token-host", "-t", type=str, help="The token endpoint to use.")
+parser.add_argument(
+    "--token-host",
+    "-t",
+    type=str,
+    help="The hostname of the token endoint. Do not include the protocol. This is normally the same as the registry host.",
+)
 parser.add_argument(
     "--service",
     type=str,

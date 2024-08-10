@@ -20,6 +20,7 @@ xfail_strict = true
 [tool.poetry.scripts]
 get-registry-token = "registry.cli.iam_token_fetcher:main"
 manage-registry-permissions = "registry.cli.iam_permissions_manager:main"
+install-registry-credentials-helper = "registry.cli.install_terraform_credential_helper:main"
 
 [build-system]
 requires = ["poetry-core>=1.7.0"]

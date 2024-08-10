@@ -15,36 +15,17 @@ update_parser = subparsers.add_parser(
     "update",
     help="Update the permissions for an IAM user on a specific tenant and namespace",
 )
-
-remove_parser.add_argument(
+parser.add_argument(
     "--role-arn",
     "-r",
     type=str,
     required=True,
-    help="The role ARN to add permissions for",
+    help="The role ARN to modify permissions for",
 )
-remove_parser.add_argument(
+parser.add_argument(
     "--tenant", "-t", type=str, required=True, help="The tenant to add permissions for"
 )
-remove_parser.add_argument(
-    "--namespace",
-    "-n",
-    type=str,
-    required=True,
-    help="The namespace to add permissions for",
-)
-
-update_parser.add_argument(
-    "--role-arn",
-    "-r",
-    type=str,
-    required=True,
-    help="The role ARN to add permissions for",
-)
-update_parser.add_argument(
-    "--tenant", "-t", type=str, required=True, help="The tenant to add permissions for"
-)
-update_parser.add_argument(
+parser.add_argument(
     "--namespace",
     "-n",
     type=str,
