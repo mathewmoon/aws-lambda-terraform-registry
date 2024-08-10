@@ -9,7 +9,10 @@ KMS Key
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
 
-No requirements.
+| Name | Version |
+|------|---------|
+| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 5.62.0 |
+| <a name="requirement_external"></a> [external](#requirement\_external) | >= 2.3.3 |
 
 ## Providers
 
