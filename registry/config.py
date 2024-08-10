@@ -28,9 +28,7 @@ elif RESOLVER_TYPE == "ALB":
 
 
 APP = Resolver()
-PROTO = environ.get("PROTO", "https://")
 BASE_URI = "/v1/modules"
-HOSTNAME = environ.get("HOSTNAME", "localhost:8000")
 LOGGER = getLogger(__name__)
 IAM_AUTH_KMS_KEY = environ.get("IAM_AUTH_KMS_KEY", "alias/terraform-registry")
 

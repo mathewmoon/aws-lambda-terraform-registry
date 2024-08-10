@@ -12,16 +12,16 @@ from ..config import TABLE, KMS, MAX_TOKEN_EXPIRATION_WINDOW, IAM_AUTH_KMS_KEY, 
 
 
 class Auth(ABC):
-    def __init__(self, token: str, tenant: str):
+    def __init__(self, token: str, namespace: str):
         """
-        Initialize the Auth object with a token and tenant.
+        Initialize the Auth object with a token and namespace.
         Validates the token upon initialization.
 
         :param token: The authentication token.
-        :param tenant: The tenant identifier.
+        :param namespace: The namespace identifier.
         """
         self.token = token
-        self.tenant = tenant
+        self.namespace = namespace
         self.validate()
 
     @property
@@ -56,17 +56,20 @@ class Auth(ABC):
 
     def get_db_key(self):
         """
-        Constructs the database key for the tenant and identifier.
+        Constructs the database key for the namespace and identifier.
 
         :return: A dictionary representing the database key.
         """
-        key = {"pk": self.tenant, "sk": f"{self.__class__.__name__}~{self.identifier}"}
+        key = {
+            "pk": self.namespace,
+            "sk": f"{self.__class__.__name__}~{self.identifier}",
+        }
 
         return key
 
     def make_item(self, permissions: dict[str, dict] = {}):
         """
-        Creates an item dictionary with tenant, identifier, and permissions.
+        Creates an item dictionary with namespace, identifier, and permissions.
 
         :param permissions: A dictionary of permissions.
         :return: A dictionary representing the item.
@@ -74,7 +77,7 @@ class Auth(ABC):
         key = self.get_db_key()
         item = {
             **key,
-            "tenant": self.tenant,
+            "namespace": self.namespace,
             "identifier": self.identifier,
             "permissions": permissions,
         }
@@ -89,10 +92,7 @@ class Auth(ABC):
         :return: The item dictionary.
         """
         key = self.get_db_key()
-        try:
-            res = TABLE.get_item(Key=key).get("Item")
-        except TABLE.meta.client.exceptions.ResourceNotFoundException:
-            res = None
+        res = TABLE.get_item(Key=key).get("Item")
 
         if res is None:
             res = self.make_item()
@@ -109,12 +109,12 @@ class Auth(ABC):
         item = self.item
         perms = {}
 
-        for namespace, ns_perms in permissions.items():
+        for system, ns_perms in permissions.items():
             perm = {
                 "download": ns_perms.get("download", False),
                 "upload": ns_perms.get("upload", False),
             }
-            perms[namespace] = perm
+            perms[system] = perm
 
         item = self.make_item(permissions=perms)
         TABLE.put_item(Item=item)
@@ -130,32 +130,30 @@ class Auth(ABC):
         """
         return self.item.get("permissions", {})
 
-    def can_download(self, namespace: str):
+    def can_download(self, system: str):
         """
-        Checks if the download permission is granted for a given namespace.
+        Checks if the download permission is granted for a given system.
 
-        :param namespace: The namespace to check.
+        :param system: The system to check.
         :return: True if download is permitted, False otherwise.
         """
-        return (
-            self.item.get("permissions", {}).get(namespace, {}).get("download", False)
-        )
+        return self.item.get("permissions", {}).get(system, {}).get("download", False)
 
-    def can_upload(self, namespace: str):
+    def can_upload(self, system: str):
         """
-        Checks if the upload permission is granted for a given namespace.
+        Checks if the upload permission is granted for a given system.
 
-        :param namespace: The namespace to check.
+        :param system: The system to check.
         :return: True if upload is permitted, False otherwise.
         """
-        return self.item.get("permissions", {}).get(namespace, {}).get("upload", False)
+        return self.item.get("permissions", {}).get(system, {}).get("upload", False)
 
     @property
-    def namespaces(self):
+    def systems(self):
         """
-        Retrieves the list of namespaces from the permissions.
+        Retrieves the list of systems from the permissions.
 
-        :return: A list of namespace strings.
+        :return: A list of system strings.
         """
         return list(self.permissions.keys())
 

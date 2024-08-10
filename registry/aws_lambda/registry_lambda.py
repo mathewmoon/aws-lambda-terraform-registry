@@ -8,8 +8,6 @@ from ..models import Module
 from ..config import (
     APP,
     BASE_URI,
-    HOSTNAME,
-    PROTO,
     LOGGER,
 )
 from ..auth.middleware import download_auth, upload_auth
@@ -25,62 +23,76 @@ def discovery() -> dict:
     Returns:
         dict: The Terraform discovery JSON.
     """
-    data = {"modules.v1": f"{PROTO}{HOSTNAME}{BASE_URI}"}
+    data = {"modules.v1": BASE_URI}
     return data
 
 
 @APP.get(routes.versions, middlewares=[download_auth])
-def get_versions(tenant, namespace, name) -> Response:
+def get_versions(namespace, system, name) -> Response:
     """
     Endpoint for retrieving the versions of a Terraform module.
 
     Args:
-        tenant (str): The tenant of the module.
         namespace (str): The namespace of the module.
+        system (str): The system of the module.
         name (str): The name of the module.
 
     Returns:
         dict: The response containing the versions of the module.
     """
-    module = Module(tenant=tenant, namespace=namespace, name=name)
+    module = Module(namespace=namespace, system=system, name=name)
     versions = module.versions
 
-    if not versions:
-        return Response(status_code=404, body=f"Module {module.module_path} not found")
-
-    res = {"modules": [{"versions": versions}]}
-
-    return Response(status_code=200, body=res, content_type="application/json")
+    return Response(status_code=200, body=versions, content_type="application/json")
 
 
-@APP.get(routes.download_module, middlewares=[download_auth])
-def download_module(tenant, namespace, name, version) -> Response:
+@APP.get(routes.get_download_url, middlewares=[download_auth])
+def get_download_url(namespace: str, system: str, name: str, version: str) -> Response:
     """
-    Endpoint for downloading a specific version of a Terraform module.
-
-    Args:
-        tenant (str): The tenant of the module.
-        namespace (str): The namespace of the module.
-        name (str): The name of the module.
-        version (str): The version of the module.
-
-    Returns:
-        Response: The response with the download link.
+    Returns back the download URL for the module inside of the response headers.
     """
     module = Module(
-        tenant=tenant,
         namespace=namespace,
+        system=system,
         name=name,
     )
-    link = module.presigned_download(version=version)
 
-    if link is None:
+    version = module.get_version(version)
+
+    if not version:
+        return Response(status_code=404, body="Module not found")
+
+    return Response(status_code=204, headers={"X-Terraform-Get": module.download_url})
+
+
+@APP.get(routes.download, middlewares=[download_auth])
+def download(namespace, system, name, version) -> Response:
+    """
+    Downloads the module.
+    """
+    module = Module(
+        namespace=namespace,
+        system=system,
+        name=name,
+    )
+    version = module.get_version(version)
+
+    if not version:
+        return Response(status_code=404, body="Module not found")
+
+    if not version.get("zipfile"):
+        url = module.presigned_url(version)
+
         return Response(
-            status_code=404,
-            body=f"Module {module.module_path} version {version} not found",
+            status_code=302,
+            headers={"Location": url},
         )
 
-    return Response(status_code=204, headers={"X-Terraform-Get": link})
+    return Response(
+        status_code=200,
+        body=version["zipfile"],
+        headers={"Content-Type": "application/zip"},
+    )
 
 
 @APP.get(routes.upload_module, middlewares=[upload_auth])

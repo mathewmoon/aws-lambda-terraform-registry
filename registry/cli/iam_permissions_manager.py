@@ -9,11 +9,11 @@ parser = ArgumentParser(description="Manage permissions for an IAM user")
 subparsers = parser.add_subparsers(dest="cmd")
 remove_parser = subparsers.add_parser(
     "remove",
-    help="Remove the permissions for an IAM user on a specific tenant and namespace",
+    help="Remove the permissions for an IAM user on a specific namespace and system",
 )
 update_parser = subparsers.add_parser(
     "update",
-    help="Update the permissions for an IAM user on a specific tenant and namespace",
+    help="Update the permissions for an IAM user on a specific namespace and system",
 )
 parser.add_argument(
     "--role-arn",
@@ -23,14 +23,18 @@ parser.add_argument(
     help="The role ARN to modify permissions for",
 )
 parser.add_argument(
-    "--tenant", "-t", type=str, required=True, help="The tenant to add permissions for"
-)
-parser.add_argument(
     "--namespace",
-    "-n",
+    "-t",
     type=str,
     required=True,
     help="The namespace to add permissions for",
+)
+parser.add_argument(
+    "--system",
+    "-n",
+    type=str,
+    required=True,
+    help="The system to add permissions for",
 )
 update_parser.add_argument(
     "--download", "-d", action="store_true", help="Whether or not to allow downloads"
@@ -45,7 +49,7 @@ args = parser.parse_args()
 def update(cur_user):
     permissions = cur_user.permissions
 
-    permissions[args.namespace] = {"download": args.download, "upload": args.upload}
+    permissions[args.system] = {"download": args.download, "upload": args.upload}
 
     cur_user.put(permissions=permissions)
     return cur_user.permissions
@@ -54,8 +58,8 @@ def update(cur_user):
 def remove(cur_user):
     permissions = cur_user.permissions
 
-    if args.namespace in permissions:
-        del permissions[args.namespace]
+    if args.system in permissions:
+        del permissions[args.system]
 
     cur_user.put(permissions=permissions)
     return cur_user.permissions
@@ -64,7 +68,7 @@ def remove(cur_user):
 def main():
     token = IAMBearerAuth.make_token(role_arn=args.role_arn, expiration_seconds=60)
 
-    cur_user = IAMBearerAuth(tenant=args.tenant, token=token)
+    cur_user = IAMBearerAuth(namespace=args.namespace, token=token)
 
     if args.cmd == "update":
         permissions = update(cur_user)

@@ -9,7 +9,7 @@ from .exceptions import AuthError
 
 def parse_path(event: dict) -> dict:
     """
-    Returns the tenant and namespace from the path.
+    Returns the namespace and system from the path.
     """
     try:
         path = event["rawPath"]
@@ -35,7 +35,7 @@ def authenticate(event: dict) -> Auth:
     Initializes an Auth object based on the token in the Authorization header
     and returns it.
     """
-    tenant, _ = parse_path(event)
+    namespace, _ = parse_path(event)
 
     try:
         token = get_header(event, "Authorization").split(" ")[1]
@@ -43,7 +43,7 @@ def authenticate(event: dict) -> Auth:
         raise AuthError("Missing or invalid credentials", status=401)
 
     auth_cls = get_auth_type(token)
-    return auth_cls(tenant=tenant, token=token)
+    return auth_cls(namespace=namespace, token=token)
 
 
 def is_authenticated(app: object, next_middleware: NextMiddleware) -> Response:
@@ -75,12 +75,12 @@ def download_auth(app: object, next_middleware: NextMiddleware) -> Response:
         Response: The response object.
     """
     event = app.current_event
-    tenant, namespace = parse_path(event)
+    namespace, system = parse_path(event)
     auth = authenticate(event)
 
-    if not (auth and auth.can_download(namespace)):
+    if not (auth and auth.can_download(system)):
         raise AuthError(
-            f"Not authorized to download from namespace {namespace} in tenant {tenant}",
+            f"Not authorized to download from system {system} in namespace {namespace}",
             status=403,
         )
 
@@ -99,10 +99,10 @@ def upload_auth(app: object, next_middleware: NextMiddleware) -> Response:
         Response: The response object.
     """
     event = app.current_event
-    _, namespace = parse_path(event)
+    _, system = parse_path(event)
     auth = authenticate(event)
 
-    if not (auth and auth.can_upload(namespace)):
+    if not (auth and auth.can_upload(system)):
         raise AuthError(status=403)
 
     return next_middleware(app)
