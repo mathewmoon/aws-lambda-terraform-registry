@@ -2,9 +2,9 @@
 This repository contains all of the pieces needed to both host, and use, a Terraform Module registry hosted on AWS Lambda.
 
 ## Installation
-From PyPi: `pip3 install lambda-terraform-module-registry`
-From source: `pip3 install lambda-terraform-module-registry`
-From source and able to make live-edits: `cd <repo root>; pip3 install --editable .`
+* PyPi: `pip3 install lambda-terraform-module-registry`
+* Source: `pip3 install lambda-terraform-module-registry`
+* Source and able to make live-edits: `cd <repo root>; pip3 install --editable .`
 
 ## Deploying
 The `terraform-module` directory contains a module, along with all of the submodules, necessary to deploy into AWS. See
