@@ -166,7 +166,7 @@ class Module(BaseModel):
             Key=f"{self.module_path}/{version}.zip",
         )
 
-    def create_version(self, version, zipfile, allow_overwrite=False):
+    def create_version(self, version: str, zipfile: bytes, allow_overwrite=False):
         item = self.item(version)
         item["zipfile"] = zipfile
         opts = {"Item": item}

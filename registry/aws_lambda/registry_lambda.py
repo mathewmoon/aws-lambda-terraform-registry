@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from base64 import b64decode
 from json import dumps
 
 from aws_lambda_powertools.event_handler.api_gateway import Response
@@ -95,9 +96,23 @@ def download(namespace, system, name, version) -> Response:
     )
 
 
-@APP.get(routes.upload_module, middlewares=[upload_auth])
-def upload_module():
-    raise NotImplementedError("Upload module endpoint not implemented")
+@APP.post(routes.upload_module, middlewares=[upload_auth])
+def upload_module(
+    namespace: str, system: str, name: str, version: str, zipfile: str
+) -> Response:
+    module = Module(
+        namespace=namespace,
+        system=system,
+        name=name,
+    )
+
+    if module.get_version(version):
+        return Response(status_code=409, body="Module already exists")
+
+    zipfile = b64decode(zipfile.encode())
+
+    res = module.create_version(version=version, zipfile=zipfile)
+    return Response(status_code=201, body=res)
 
 
 @APP.get(routes.create_module, middlewares=[upload_auth])
