@@ -1,9 +1,25 @@
 # Self-hosted Terraform Module Registry with IAM Auth
 This repository contains all of the pieces needed to both host, and use, a Terraform Module registry hosted on AWS Lambda.
 
+## Installation
+From PyPi: `pip3 install lambda-terraform-module-registry`
+From source: `pip3 install lambda-terraform-module-registry`
+From source and able to make live-edits: `cd <repo root>; pip3 install --editable .`
+
 ## Deploying
 The `terraform-module` directory contains a module, along with all of the submodules, necessary to deploy into AWS. See
 [README.md](terraform-module/README.md) in the `terraform-module` directory for a list of resources that are created.
+
+Deploy full application to AWS:
+* `cd terraform module`
+* Create a `tfvars` file to configure the variables to your suiting
+* Make any backend configuration updates you need
+* `terraform apply`
+
+To build a Lambda manually:
+* `pip3 install --no-cache -t build lambda-terraform-module-registry`
+* `cd build`
+* `zip -r ../myfunction.zip .`
 
 ## CLI Tools
 The package includes a few CLI tools for working with the registry:
