@@ -1,76 +1,105 @@
 #!/usr/bin/env python3
 from base64 import b64decode
+from hashlib import sha256
+from typing import Any, Self
 
-from pydantic import BaseModel, PrivateAttr
-from boto3.dynamodb.conditions import Key
+from pydantic import BaseModel, ConfigDict, field_validator
+from boto3.dynamodb.conditions import Attr, Key
+from boto3.dynamodb.types import Binary
 
-from .config import REGISTRY_BUCKET, S3, TABLE
+from .config import S3, TABLE
 
 
-class Module(BaseModel):
+class Zipfile(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+        arbitrary_types_allowed=True
+    )
+    namespace: str
+    system: str
+    name: str
+    version: str
+    data: bytes | Binary = b""
+
+
+    @field_validator("data")
+    def to_bytes(cls, data) -> bytes:
+        if isinstance(data, Binary):
+            data = data.value
+        return data
+
+
+    @property
+    def checksum(self):
+        return sha256(self.data).hexdigest()
+
+
+    @classmethod
+    def get_db_key(cls, namespace, system, name, version):
+        return {
+            "pk": namespace,
+            "sk": f"{cls.__name__}~{namespace}/{system}/{name}~{version}",
+        }
+
+    @classmethod
+    def create(
+        cls,
+        namespace,
+        system,
+        name,
+        version,
+        data,
+        allow_overwrite=False
+    ):
+        key = cls.get_db_key(namespace, system, name, version)
+
+        item = {
+            **key,
+            "namespace": namespace,
+            "system": system,
+            "name": name,
+            "version": version,
+            "data": data,
+        }
+
+        opts = {
+            "Item": item,
+        }
+
+        if not allow_overwrite:
+            opts["ConditionExpression"] = Attr("pk").not_exists() & Attr("sk").not_exists()
+
+        TABLE.put_item(**opts)
+
+        return cls(**item)
+
+
+    @classmethod
+    def get(cls, namespace, system, name, version):
+        res = TABLE.get_item(
+            Key=cls.get_db_key(namespace, system, name, version)
+        )
+        if item := res.get("Item"):
+            return cls(**item)
+
+
+    def module(self):
+        return Module.get(self.namespace, self.system, self.name, self.version)
+
+
+class Module(BaseModel, extra="ignore"):
+    model_config = ConfigDict(
+        extra="ignore",
+        arbitrary_types_allowed=True
+    )
+
     namespace: str  # The name of the namespace
     system: str  # The name of the system
     name: str  # The name of the module
-    _versions: list | None = PrivateAttr(
-        None
-    )  # A private attribute to store the versions of the module
+    version: str  # The version of the module
+    bucket: str | None = None  # The bucket that the object is stored in, if not passed as a binary parameter
+    expected_checksum: str | None = None  # The expected checksum of the object
 
-    def namespace_exists(self):
-        """
-        Check if the namespace exists in the registry bucket.
-
-        Returns:
-            bool: True if the namespace exists, False otherwise.
-        """
-        res = TABLE.get(
-            Key={
-                "pk": self.namespace,
-                "sk": "NAMESPACE~",
-            }
-        )
-
-        return bool(res.get("Item"))
-
-    @property
-    def sk_identifier(self):
-        return self.__class__.__name__
-
-    @property
-    def full_name(self):
-        return f"{self.name}/{self.system}"
-
-    @classmethod
-    def get_version_from_path(cls, path):
-        """
-        Get the version from the given path.
-
-        Args:
-            path (str): The path to extract the version from.
-
-        Returns:
-            str: The extracted version.
-        """
-        return path.split("/")[-1].replace("v", "").replace(".zip", "")
-
-    @property
-    def system_path(self):
-        """
-        Get the path of the system.
-
-        Returns:
-            str: The path of the system.
-        """
-        return f"{self.namespace}/{self.system}"
-
-    @property
-    def namespace_path(self):
-        """
-        Get the path of the namespace.
-
-        Returns:
-            str: The path of the namespace.
-        """
-        return self.namespace
 
     @property
     def module_path(self):
@@ -82,40 +111,125 @@ class Module(BaseModel):
         """
         return f"{self.namespace}/{self.system}/{self.name}"
 
+    @classmethod
+    def get_sk(
+        cls,
+        namespace,
+        system,
+        name,
+        version=None
+    ):
+        sk = f"{cls.__name__}~{namespace}/{system}/{name}~"
+        if version:
+            sk += f"{version}"
+
+        return sk
+
+    @classmethod
+    def get_db_key(
+        cls,
+        namespace,
+        system,
+        name,
+        version=None
+    ):
+        return {
+            "pk": namespace,
+            "sk": cls.get_sk(namespace, system, name, version),
+        }
+
+
     @property
-    def versions(self):
+    def zipfile(self):
+        res = Zipfile.get(
+            self.namespace,
+            self.system,
+            self.name,
+            self.version
+        )
+        return res
+
+
+    @classmethod
+    def get_s3_checksum(
+        self,
+        namespace,
+        system,
+        name,
+        version,
+        bucket
+    ):
+        key = f"{namespace}/{system}/{name}/{version}.zip"
+        try:
+            res = S3.get_object_attributes(
+                Bucket=bucket,
+                Key=key,
+                ObjectAttributes=["Checksum"],
+            )
+            return res["Checksum"]["ChecksumSHA256"]
+        except KeyError:
+            raise ValueError("Checksum not found. Make sure your object contains a SHA256 checksum.")
+        except (
+            S3.exceptions.NoSuchKey,
+            S3.exceptions.NoSuchBucket,
+        ):
+            raise ValueError(f"Object {self.module_path}/{self.version}.zip does not exist in bucket {self.bucket}")
+
+
+    @classmethod
+    def versions(
+        cls,
+        namespace: str,
+        system: str,
+        name: str,
+    ) -> list[Self]:
         """
         Get the versions of the module.
 
         Returns:
             list: A list of dictionaries containing the versions of the module.
         """
+        sk = cls.get_sk(namespace, system, name)
+
         res = TABLE.query(
-            KeyConditionExpression=Key("pk").eq(self.namespace)
-            & Key("sk").begins_with(f"{self.sk_identifier}~{self.system}/{self.name}"),
+            KeyConditionExpression=Key("pk").eq(namespace)
+            & Key("sk").begins_with(sk),
         )["Items"]
 
-        versions = {
-            "versions": [{"version": x["version"]} for x in res],
-        }
+        versions = [
+            cls(**item) for item in res
+        ]
 
         return versions
 
-    def get_key(self, version):
-        return {
-            "pk": self.namespace,
-            "sk": f"{self.sk_identifier}~{self.system}/{self.name}~{version}",
-        }
 
-    def get_version(self, version):
-        return self.item(version, no_create=True)
+    @property
+    def db_key(self):
+        return self.get_db_key(self.namespace, self.system, self.name, self.version)
 
-    def presigned_url(self, version, expires_in=30):
+
+    @classmethod
+    def get(
+        cls,
+        namespace: str,
+        system: str,
+        name: str,
+        version: str,
+    ):
+        key = cls.get_db_key(namespace, system, name, version)
+
+        res = TABLE.get_item(Key=key).get("Item")
+
+        if res:
+            return cls(**res)
+
+
+    def presigned_url(self, expires_in=30):
         url = S3.generate_presigned_url(
             "get_object",
             Params={
-                "Bucket": REGISTRY_BUCKET,
-                "Key": f"{self.module_path}/{version}.zip",
+                "Bucket": self.bucket,
+                "Key": f"{self.module_path}/{self.version}.zip",
             },
             ExpiresIn=expires_in,
         )
@@ -126,77 +240,60 @@ class Module(BaseModel):
         """
         Return the relative download URL of the module.
         """
-        return "./package"
+        return "./zip"
 
-    def download_from_item(self, version):
-        """
-        Download the module from the item.
 
-        Args:
-            version (str): The version of the module to download.
+    @classmethod
+    def create(
+        cls,
+        namespace: str,
+        system: str,
+        name: str,
+        version: str,
+        zipfile: bytes | None = None,
+        bucket: str | None = None,
+        allow_overwrite=False
+    ):
+        if (
+            (zipfile is None and bucket is None)
+            or (zipfile is not None and bucket is not None)
+        ):
+            raise ValueError("Exactly one of zipfile or bucket must be passed")
 
-        Returns:
-            dict: A dictionary containing the download link of the module.
-        """
-        item = self.get_version_item(version)
+        key = cls.get_db_key(namespace, system, name, version)
 
-        if item is None or "zipfile" not in item:
-            return None
+        item = {
+            **key,
+            "namespace": namespace,
+            "system": system,
+            "name": name,
+            "version": version,
+        }            
 
-        zipfile = item["zipfile"].decode()
+        if bucket:
+            item["expected_checksum"] = cls.get_s3_checksum(namespace, system, name, version, bucket)
+        else:
+            item["expected_checksum"] = sha256(zipfile).hexdigest()
 
-        return zipfile
-
-    def has_version(self, version: str):
-        return self.item(version, no_create=True) is not None
-
-    def item(self, version, no_create=False):
-        item = TABLE.get_item(Key=self.get_key(version)).get("Item")
-
-        if item is None and not no_create:
-            item = self.get_key(version)
-            item["version"] = version
-
-        return item
-
-    def delete_version(self, version):
-        TABLE.delete_item(Key=self.get_key(version))
-        S3.delete_object(
-            Bucket=REGISTRY_BUCKET,
-            Key=f"{self.module_path}/{version}.zip",
-        )
-
-    def create_version(self, version: str, zipfile: bytes, allow_overwrite=False):
-        item = self.item(version)
-        item["zipfile"] = zipfile
-        opts = {"Item": item}
-
-        if not allow_overwrite:
-            opts[
-                "ConditionExpression"
-            ] = "attribute_not_exists(pk) AND attribute_not_exists(sk)"
-
-        return TABLE.put_item(**opts)
-
-    @property
-    def readme(self):
-        """
-        Get the content of the README file.
-
-        Returns:
-            dict: A dictionary containing the content of the README file.
-        """
-        try:
-            res = S3.get_object(
-                Bucket=REGISTRY_BUCKET,
-                Key=f"{self.module_path}/README.md",
-            )
-            body = res["Body"].read().decode()
-        except S3.exceptions.NoSuchKey:
-            body = ""
-
-        res = {
-            "readme": body,
+        opts = {
+            "Item": item,
         }
 
-        return res
+        if not allow_overwrite:
+            opts["ConditionExpression"] = Attr("pk").not_exists() & Attr("sk").not_exists()
+
+
+        TABLE.put_item(**opts)
+        
+        if zipfile:
+            Zipfile.create(
+                namespace=namespace,
+                system=system,
+                name=name,
+                version=version,
+                data=zipfile,
+                allow_overwrite=allow_overwrite
+            )
+
+        return cls(**item)
+

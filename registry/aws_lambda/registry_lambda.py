@@ -1,23 +1,39 @@
 #!/usr/bin/env python3
 from base64 import b64decode
+from io import BytesIO
 from json import dumps
+from typing import Any
+from urllib.parse import urlencode
+from tempfile import NamedTemporaryFile
 
-from aws_lambda_powertools.event_handler.api_gateway import Response
+from fastapi import Request
+from fastapi.responses import JSONResponse, Response, StreamingResponse, FileResponse
 
 from . import make_lambda_response
+from ..auth import parse_assumed_role
 from ..models import Module
 from ..config import (
     APP,
+    MANGUM,
     BASE_URI,
     LOGGER,
+    MAX_TOKEN_EXPIRATION_WINDOW,
 )
-from ..auth.middleware import download_auth, upload_auth
+from ..auth.bearer import IAMBearerAuth
+from ..auth.middleware import download_auth, upload_auth, auth_wrapper, get_header
 from ..auth.exceptions import AuthError
 from .. import routes
 
 
+@APP.exception_handler(Exception)
+def custom_exceptions(_: Any, e: Exception):
+    return JSONResponse(
+        status_code=500, content={"message": "Internal Server Error", "code": 500}
+    )
+
+
 @APP.get(routes.well_known)
-def discovery() -> dict:
+async def discovery() -> dict:
     """
     Endpoint for serving the Terraform discovery JSON.
 
@@ -28,8 +44,9 @@ def discovery() -> dict:
     return data
 
 
-@APP.get(routes.versions, middlewares=[download_auth])
-def get_versions(namespace, system, name) -> Response:
+@APP.get(routes.versions)
+@auth_wrapper(download_auth)
+async def get_versions(namespace: str, system: str, name: str, request: Request) -> Response:
     """
     Endpoint for retrieving the versions of a Terraform module.
 
@@ -41,64 +58,91 @@ def get_versions(namespace, system, name) -> Response:
     Returns:
         dict: The response containing the versions of the module.
     """
-    module = Module(namespace=namespace, system=system, name=name)
-    versions = module.versions
+    versions = Module.versions(
+        namespace=namespace,
+        system=system,
+        name=name
+    )
+    versions = [{"version": v.version} for v in versions]
+    res = {"modules": [{"versions": versions}]}
 
-    return Response(status_code=200, body=versions, content_type="application/json")
+    return JSONResponse(status_code=200, content=res)
 
 
-@APP.get(routes.get_download_url, middlewares=[download_auth])
-def get_download_url(namespace: str, system: str, name: str, version: str) -> Response:
+@APP.get(routes.get_download_url)
+@auth_wrapper(download_auth)
+async def get_download_url(namespace: str, system: str, name: str, version: str, request: Request) -> Response:
     """
     Returns back the download URL for the module inside of the response headers.
     """
-    module = Module(
+    module = Module.get(
         namespace=namespace,
         system=system,
         name=name,
+        version=version
     )
 
-    version = module.get_version(version)
 
-    if not version:
+    if not module:
         return Response(status_code=404, body="Module not found")
 
-    return Response(status_code=204, headers={"X-Terraform-Get": module.download_url})
+    if module.zipfile:
+        event = request.scope["aws.event"]
+        cur_path = event["path"].lstrip("/")
+        host = event["headers"]["Host"]
+
+        role = get_header(request, "authorization").split("~")[1]
+
+        token = IAMBearerAuth.make_token(
+            role_arn=role,
+            expiration_seconds=3000
+        )
+
+        params = urlencode({"x_registry_auth": token})
+        url = f"https://{host}/{cur_path}/zip?{params}"
+
+    else:
+        url = module.presigned_url()
+
+    return Response(status_code=204, headers={"X-Terraform-Get": url})
 
 
-@APP.get(routes.download, middlewares=[download_auth])
-def download(namespace, system, name, version) -> Response:
+@APP.get(routes.download)
+@auth_wrapper(download_auth)
+async def download(namespace, system, name, version, request: Request) -> Response:
     """
     Downloads the module.
     """
-    module = Module(
+
+    module = Module.get(
         namespace=namespace,
         system=system,
         name=name,
+        version=version
     )
-    version = module.get_version(version)
 
-    if not version:
+    if not module:
         return Response(status_code=404, body="Module not found")
 
-    if not version.get("zipfile"):
-        url = module.presigned_url(version)
+    if zipfile := module.zipfile:
+        LOGGER.info(f"Found zipfile for {module.module_path}")
+        obj = BytesIO(zipfile.data)
+        obj.seek(0)
 
-        return Response(
-            status_code=302,
-            headers={"Location": url},
-        )
-
-    return Response(
-        status_code=200,
-        body=version["zipfile"],
-        headers={"Content-Type": "application/zip"},
-    )
+        fname = f"{module.module_path}/{module.version}.zip".replace("/", "-")
+        from os import path
+        newpath = path.join(path.dirname(__file__), "test.zip")
+        return FileResponse(newpath, headers={"Content-Disposition": f"attachment; filename={fname}"}, media_type="application/zip")
+        with NamedTemporaryFile(mode="w+b", delete=False) as f:
+            f.write(zipfile.data)
+            f.seek(0)
+            return Response(zipfile.data, headers={"Content-Type": "gzip"}, media_type="application/gzip")
 
 
-@APP.post(routes.upload_module, middlewares=[upload_auth])
-def upload_module(
-    namespace: str, system: str, name: str, version: str, zipfile: str
+@APP.post(routes.upload_module)
+@auth_wrapper(upload_auth)
+async def upload_module(
+    namespace: str, system: str, name: str, version: str, zipfile: str, request: Request
 ) -> Response:
     module = Module(
         namespace=namespace,
@@ -112,12 +156,46 @@ def upload_module(
     zipfile = b64decode(zipfile.encode())
 
     res = module.create_version(version=version, zipfile=zipfile)
-    return Response(status_code=201, body=res)
+    return Response(status_code=201, content=res)
 
 
-@APP.get(routes.create_module, middlewares=[upload_auth])
-def create_module():
+@APP.get(routes.create_module)
+@auth_wrapper(upload_auth)
+async def create_module(request: Request) -> Response:
     raise NotImplementedError("Create module endpoint not implemented")
+
+
+@APP.get(routes.iam_token_endpoint)
+def get_token(request: Request) -> str:
+    """
+    Endpoint for generating temporary credentials based on IAM auth
+
+    Returns:
+        str: The response containing the temporary credentials.
+    """
+    event = request.scope["aws.event"]
+
+    try:
+        authorizor = event["requestContext"]["authorizer"]
+    except KeyError:
+        authorizor = event["requestContext"]["identity"]
+
+    try:
+        user_arn = authorizor["iam"]["userArn"]
+    except KeyError:
+        user_arn = authorizor["userArn"]
+
+    role_arn = parse_assumed_role(user_arn)
+    params = event.get("queryStringParameters", {})
+    expiration_seconds = int(
+        params.get("expiration_seconds", MAX_TOKEN_EXPIRATION_WINDOW)
+    )
+
+    token = IAMBearerAuth.make_token(
+        role_arn=role_arn,
+        expiration_seconds=expiration_seconds,
+    )
+    return Response(status_code=200, content=token, media_type="text/plain")
 
 
 def handler(event, ctx):
@@ -132,11 +210,9 @@ def handler(event, ctx):
         Any: The response from the Mangum handler.
     """
     LOGGER.info(dumps(event, indent=2, default=lambda x: str(x)))
-    LOGGER.info(APP)
-    LOGGER.info(type(APP))
 
     try:
-        res = APP.resolve(event, ctx)
+        res = MANGUM(event, ctx)
         LOGGER.info(dumps(res, indent=2, default=lambda x: str(x)))
         return res
     except AuthError as e:

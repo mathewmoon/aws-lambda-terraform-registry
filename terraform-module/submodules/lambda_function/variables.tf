@@ -58,8 +58,3 @@ variable "auth_type" {
     error_message = "auth_type must be either 'NONE' or 'AWS_IAM'"
   }
 }
-
-variable "powertools_layer_version" {
-  description = "The version of the AWS Lambda Powertools Python V2 layer to use."
-  type        = string
-}

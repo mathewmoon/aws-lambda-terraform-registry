@@ -10,7 +10,7 @@ resource "aws_lambda_function" "this" {
   role          = var.role_arn
   timeout       = var.timeout
   memory_size   = var.memory_size
-  layers        = ["arn:aws:lambda:us-east-1:017000801446:layer:AWSLambdaPowertoolsPythonV2:${var.powertools_layer_version}"]
+  layers        = ["arn:aws:lambda:us-east-1:637423294718:layer:fastapi:1"]
 
   environment {
     variables = var.environment

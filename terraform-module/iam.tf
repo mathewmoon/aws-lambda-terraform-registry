@@ -50,9 +50,11 @@ data "aws_iam_policy_document" "terraform_registry" {
       "dynamodb:PutItem",
       "dynamodb:UpdateItem",
       "dynamodb:DeleteItem",
+      "dynamodb:Query",
     ]
     resources = [
       aws_dynamodb_table.registry.arn,
+      "${aws_dynamodb_table.registry.arn}/*",
     ]
   }
 

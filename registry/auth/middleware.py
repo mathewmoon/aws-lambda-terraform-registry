@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
+from functools import wraps
+from typing import Any, Callable
 
-from aws_lambda_powertools.event_handler.api_gateway import Response
-from aws_lambda_powertools.event_handler.middlewares import NextMiddleware
+from fastapi import Request
 
 from .bearer import Auth, get_auth_type
 from .exceptions import AuthError
@@ -20,33 +21,42 @@ def parse_path(event: dict) -> dict:
     return tuple(parts)
 
 
-def get_header(event: dict, name: str) -> str:
+def get_header(req: Request, name: str) -> Any:
     """
     Returns the value of a specific header by name.
     """
     try:
-        return event["headers"][name]
+        return req.headers[name]
     except KeyError:
-        return event["headers"][name.lower()]
+        return req.headers[name.lower()]
 
 
-def authenticate(event: dict) -> Auth:
+def authenticate(req: Request) -> Auth:
     """
     Initializes an Auth object based on the token in the Authorization header
     and returns it.
     """
-    namespace, _ = parse_path(event)
-
+    namespace = req.path_params["namespace"]
     try:
-        token = get_header(event, "Authorization").split(" ")[1]
-    except (KeyError, IndexError):
-        raise AuthError("Missing or invalid credentials", status=401)
+        auth_header = get_header(req, "Authorization")
+    except KeyError:
+        auth_header = None
+        try:
+            token = req.query_params["x_registry_auth"]
+        except KeyError:
+            raise AuthError("Missing or invalid credentials", status=401)
+
+    if auth_header:
+        try:
+            token = auth_header.split(" ")[1]
+        except (KeyError, IndexError):
+            raise AuthError("Missing or invalid credentials", status=401)
 
     auth_cls = get_auth_type(token)
     return auth_cls(namespace=namespace, token=token)
 
 
-def is_authenticated(app: object, next_middleware: NextMiddleware) -> Response:
+def is_authenticated(req: Request) -> bool:
     """
     Middleware for authenticating requests.
 
@@ -57,13 +67,13 @@ def is_authenticated(app: object, next_middleware: NextMiddleware) -> Response:
     Returns:
         Response: The response object.
     """
-    event = app.current_event
-    authenticate(event)
+    
+    authenticate(req)
 
-    return next_middleware(app)
+    return True
 
 
-def download_auth(app: object, next_middleware: NextMiddleware) -> Response:
+def download_auth(req: Request) -> True:
     """
     Middleware for authenticating requests.
 
@@ -74,20 +84,19 @@ def download_auth(app: object, next_middleware: NextMiddleware) -> Response:
     Returns:
         Response: The response object.
     """
-    event = app.current_event
-    namespace, system = parse_path(event)
-    auth = authenticate(event)
+    namespace = req.path_params["namespace"]
+    auth = authenticate(req)
 
-    if not (auth and auth.can_download(system)):
+    if not (auth and auth.can_download(namespace)):
         raise AuthError(
-            f"Not authorized to download from system {system} in namespace {namespace}",
+            f"Not authorized to download from namespace {namespace}",
             status=403,
         )
 
-    return next_middleware(app)
+    return True
 
 
-def upload_auth(app: object, next_middleware: NextMiddleware) -> Response:
+def upload_auth(req: Request) -> None:
     """
     Middleware for authenticating requests.
 
@@ -98,11 +107,36 @@ def upload_auth(app: object, next_middleware: NextMiddleware) -> Response:
     Returns:
         Response: The response object.
     """
-    event = app.current_event
-    _, system = parse_path(event)
-    auth = authenticate(event)
+    path_params = req.path_params
 
-    if not (auth and auth.can_upload(system)):
+    namespace = path_params["namespace"]
+
+    auth = authenticate(req)
+
+    if not (auth and auth.can_upload(namespace)):
         raise AuthError(status=403)
 
-    return next_middleware(app)
+    return True
+
+
+def auth_wrapper(authorizor: Callable):
+    """
+    Decorator function for checking user permissions.
+
+    Args:
+        permission (Operation): The required permission for the decorated function.
+
+    Returns:
+        Callable: The decorated function.
+    """
+
+    def wrapper(func):
+        @wraps(func)
+        async def inner(*args, request: Request, **kwargs):
+            authorizor(request)
+
+            return await func(*args, request=request, **kwargs)
+
+        return inner
+
+    return wrapper

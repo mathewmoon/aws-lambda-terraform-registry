@@ -29,13 +29,6 @@ parser.add_argument(
     required=True,
     help="The namespace to add permissions for",
 )
-parser.add_argument(
-    "--system",
-    "-n",
-    type=str,
-    required=True,
-    help="The system to add permissions for",
-)
 update_parser.add_argument(
     "--download", "-d", action="store_true", help="Whether or not to allow downloads"
 )
@@ -49,7 +42,7 @@ args = parser.parse_args()
 def update(cur_user):
     permissions = cur_user.permissions
 
-    permissions[args.system] = {"download": args.download, "upload": args.upload}
+    permissions[args.namespace] = {"download": args.download, "upload": args.upload}
 
     cur_user.put(permissions=permissions)
     return cur_user.permissions

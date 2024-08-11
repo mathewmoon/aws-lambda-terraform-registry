@@ -109,12 +109,12 @@ class Auth(ABC):
         item = self.item
         perms = {}
 
-        for system, ns_perms in permissions.items():
+        for namespace, ns_perms in permissions.items():
             perm = {
                 "download": ns_perms.get("download", False),
                 "upload": ns_perms.get("upload", False),
             }
-            perms[system] = perm
+            perms[namespace] = perm
 
         item = self.make_item(permissions=perms)
         TABLE.put_item(Item=item)
@@ -130,30 +130,30 @@ class Auth(ABC):
         """
         return self.item.get("permissions", {})
 
-    def can_download(self, system: str):
+    def can_download(self, namespace: str):
         """
-        Checks if the download permission is granted for a given system.
+        Checks if the download permission is granted for a given namespace.
 
-        :param system: The system to check.
+        :param namespace: The namespace to check.
         :return: True if download is permitted, False otherwise.
         """
-        return self.item.get("permissions", {}).get(system, {}).get("download", False)
+        return self.item.get("permissions", {}).get(namespace, {}).get("download", False)
 
-    def can_upload(self, system: str):
+    def can_upload(self, namespace: str):
         """
-        Checks if the upload permission is granted for a given system.
+        Checks if the upload permission is granted for a given namespace.
 
-        :param system: The system to check.
+        :param namespace: The namespace to check.
         :return: True if upload is permitted, False otherwise.
         """
-        return self.item.get("permissions", {}).get(system, {}).get("upload", False)
+        return self.item.get("permissions", {}).get(namespace, {}).get("upload", False)
 
     @property
-    def systems(self):
+    def namespaces(self):
         """
-        Retrieves the list of systems from the permissions.
+        Retrieves the list of namespaces from the permissions.
 
-        :return: A list of system strings.
+        :return: A list of namespace strings.
         """
         return list(self.permissions.keys())
 
