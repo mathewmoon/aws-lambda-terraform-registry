@@ -1,15 +1,10 @@
 #!/usr/bin/env python3
 from argparse import ArgumentParser
+from json import dumps
 from os import chmod, makedirs, path
 
 
 parser = ArgumentParser(description="Install the Terraform credential helper")
-parser.add_argument(
-    "--token-host",
-    type=str,
-    help="The host to get tokens from. Do not unclude URL or protocol",
-    required=True,
-)
 parser.add_argument(
     "--service",
     type=str,
@@ -36,20 +31,23 @@ parser.add_argument(
     type=str,
     help="The path to the Terraform RC file to write to. Optional.",
 )
+parser.add_argument(
+    "--registry-host",
+    type=str,
+    help="The host to get tokens from. Do not unclude URL or protocol",
+    required=True,
+)
 
 args = parser.parse_args()
+
+tf_args = dumps(
+    ["--service", args.service, "--expiration-window", args.expiration_window], indent=2
+)
 
 
 rc_code = f"""
 credentials_helper "aws-credstore" {{
-      args = [
-        "--token-endpoint",
-        "https://{args.token_host}/token",
-        "--service",
-        "{args.service}",
-        "--expiration-window",
-        "{args.expiration_window}"
-    ]
+      args = {tf_args}
 }}
 """
 

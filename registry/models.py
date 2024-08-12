@@ -1,184 +1,86 @@
 #!/usr/bin/env python3
-from base64 import b64decode
-from hashlib import sha256
 from typing import Any, Self
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 from boto3.dynamodb.conditions import Attr, Key
-from boto3.dynamodb.types import Binary
+from botocore.exceptions import ClientError
 
-from .config import S3, TABLE
-
-
-class Zipfile(BaseModel):
-    model_config = ConfigDict(
-        extra="ignore",
-        arbitrary_types_allowed=True
-    )
-    namespace: str
-    system: str
-    name: str
-    version: str
-    data: bytes | Binary = b""
-
-
-    @field_validator("data")
-    def to_bytes(cls, data) -> bytes:
-        if isinstance(data, Binary):
-            data = data.value
-        return data
-
-
-    @property
-    def checksum(self):
-        return sha256(self.data).hexdigest()
-
-
-    @classmethod
-    def get_db_key(cls, namespace, system, name, version):
-        return {
-            "pk": namespace,
-            "sk": f"{cls.__name__}~{namespace}/{system}/{name}~{version}",
-        }
-
-    @classmethod
-    def create(
-        cls,
-        namespace,
-        system,
-        name,
-        version,
-        data,
-        allow_overwrite=False
-    ):
-        key = cls.get_db_key(namespace, system, name, version)
-
-        item = {
-            **key,
-            "namespace": namespace,
-            "system": system,
-            "name": name,
-            "version": version,
-            "data": data,
-        }
-
-        opts = {
-            "Item": item,
-        }
-
-        if not allow_overwrite:
-            opts["ConditionExpression"] = Attr("pk").not_exists() & Attr("sk").not_exists()
-
-        TABLE.put_item(**opts)
-
-        return cls(**item)
-
-
-    @classmethod
-    def get(cls, namespace, system, name, version):
-        res = TABLE.get_item(
-            Key=cls.get_db_key(namespace, system, name, version)
-        )
-        if item := res.get("Item"):
-            return cls(**item)
-
-
-    def module(self):
-        return Module.get(self.namespace, self.system, self.name, self.version)
+from .config import S3, LOGGER, TABLE
 
 
 class Module(BaseModel, extra="ignore"):
-    model_config = ConfigDict(
-        extra="ignore",
-        arbitrary_types_allowed=True
-    )
+    model_config = ConfigDict(extra="ignore", arbitrary_types_allowed=True)
 
     namespace: str  # The name of the namespace
     system: str  # The name of the system
     name: str  # The name of the module
     version: str  # The version of the module
-    bucket: str | None = None  # The bucket that the object is stored in, if not passed as a binary parameter
-    expected_checksum: str | None = None  # The expected checksum of the object
+    bucket: str  # The bucket that the object is stored in, if not passed as a binary parameter
+    key: str  # The key of the object in the bucket
+    expected_checksum: str  # The expected checksum of the object
 
+    @model_validator(mode="after")
+    def validate_model(self):
+        real_checksum = self.get_checksum(bucket=self.bucket, key=self.key)
 
-    @property
-    def module_path(self):
-        """
-        Get the path of the module.
-
-        Returns:
-            str: The path of the module.
-        """
-        return f"{self.namespace}/{self.system}/{self.name}"
+        if real_checksum != self.expected_checksum:
+            raise ValueError(
+                f"Checksum mismatch. Expected {self.expected_checksum}, got {real_checksum}"
+            )
 
     @classmethod
     def get_sk(
-        cls,
-        namespace,
-        system,
-        name,
-        version=None
+        cls, *, namespace: str, system: str, name: str, version: str | None = None
     ):
-        sk = f"{cls.__name__}~{namespace}/{system}/{name}~"
+        sk = f"{cls.__name__}~{namespace}~{name}~{system}~"
         if version:
-            sk += f"{version}"
+            sk += version
 
         return sk
 
     @classmethod
-    def get_db_key(
-        cls,
-        namespace,
-        system,
-        name,
-        version=None
+    def __get_db_key(
+        cls, *, namespace: str, system: str, name: str, version: str | None = None
     ):
         return {
             "pk": namespace,
-            "sk": cls.get_sk(namespace, system, name, version),
+            "sk": cls.get_sk(
+                namespace=namespace, system=system, name=name, version=version
+            ),
         }
 
-
-    @property
-    def zipfile(self):
-        res = Zipfile.get(
-            self.namespace,
-            self.system,
-            self.name,
-            self.version
-        )
-        return res
-
-
     @classmethod
-    def get_s3_checksum(
-        self,
-        namespace,
-        system,
-        name,
-        version,
-        bucket
-    ):
-        key = f"{namespace}/{system}/{name}/{version}.zip"
+    def get_checksum(cls, *, bucket: str, key: str):
         try:
             res = S3.get_object_attributes(
-                Bucket=bucket,
-                Key=key,
-                ObjectAttributes=["Checksum"],
+                Bucket=bucket, Key=key, ObjectAttributes=["Checksum"]
             )
             return res["Checksum"]["ChecksumSHA256"]
         except KeyError:
-            raise ValueError("Checksum not found. Make sure your object contains a SHA256 checksum.")
+            LOGGER.info("No checksum found for {bucket}/{key}")
+            raise ValueError(
+                "Checksum not found. Make sure your object contains a SHA256 checksum."
+            )
+        except ClientError as e:
+            LOGGER.info("Client error when getting checksum for {bucket}/{key}")
+            if "Access Denied" in str(e):
+                LOGGER.info(e)
+                raise ValueError(
+                    f"Access denied to bucket or object when accessing bucket {bucket} with key {key}."
+                )
+
+            else:
+                raise Exception(e)
         except (
             S3.exceptions.NoSuchKey,
             S3.exceptions.NoSuchBucket,
         ):
-            raise ValueError(f"Object {self.module_path}/{self.version}.zip does not exist in bucket {self.bucket}")
-
+            raise ValueError(f"Backend object {key} does not exist in bucket {bucket}")
 
     @classmethod
     def versions(
         cls,
+        *,
         namespace: str,
         system: str,
         name: str,
@@ -189,111 +91,67 @@ class Module(BaseModel, extra="ignore"):
         Returns:
             list: A list of dictionaries containing the versions of the module.
         """
-        sk = cls.get_sk(namespace, system, name)
+        sk = cls.get_sk(namespace=namespace, system=system, name=name)
 
         res = TABLE.query(
-            KeyConditionExpression=Key("pk").eq(namespace)
-            & Key("sk").begins_with(sk),
+            KeyConditionExpression=Key("pk").eq(namespace) & Key("sk").begins_with(sk),
         )["Items"]
 
-        versions = [
-            cls(**item) for item in res
-        ]
+        versions = {"modules": [{"versions": [{"version": v["version"]} for v in res]}]}
 
         return versions
 
-
     @property
-    def db_key(self):
-        return self.get_db_key(self.namespace, self.system, self.name, self.version)
-
+    def __db_key(self):
+        return self.__get_db_key(
+            namespace=self.namespace,
+            system=self.system,
+            name=self.name,
+            version=self.version,
+        )
 
     @classmethod
     def get(
         cls,
+        *,
         namespace: str,
         system: str,
         name: str,
         version: str,
     ):
-        key = cls.get_db_key(namespace, system, name, version)
+        key = cls.__get_db_key(
+            namespace=namespace, system=system, name=name, version=version
+        )
 
         res = TABLE.get_item(Key=key).get("Item")
 
         if res:
             return cls(**res)
 
-
-    def presigned_url(self, expires_in=30):
+    def presigned_url(self, *, expires_in=30):
         url = S3.generate_presigned_url(
             "get_object",
             Params={
                 "Bucket": self.bucket,
-                "Key": f"{self.module_path}/{self.version}.zip",
+                "Key": self.key,
             },
             ExpiresIn=expires_in,
         )
         return url
 
-    @property
-    def download_url(self):
-        """
-        Return the relative download URL of the module.
-        """
-        return "./zip"
-
-
-    @classmethod
-    def create(
-        cls,
-        namespace: str,
-        system: str,
-        name: str,
-        version: str,
-        zipfile: bytes | None = None,
-        bucket: str | None = None,
-        allow_overwrite=False
-    ):
-        if (
-            (zipfile is None and bucket is None)
-            or (zipfile is not None and bucket is not None)
-        ):
-            raise ValueError("Exactly one of zipfile or bucket must be passed")
-
-        key = cls.get_db_key(namespace, system, name, version)
-
+    def create(self, *, allow_overwrite=False):
         item = {
-            **key,
-            "namespace": namespace,
-            "system": system,
-            "name": name,
-            "version": version,
-        }            
-
-        if bucket:
-            item["expected_checksum"] = cls.get_s3_checksum(namespace, system, name, version, bucket)
-        else:
-            item["expected_checksum"] = sha256(zipfile).hexdigest()
+            **self.__db_key,
+            **self.model_dump(),
+        }
 
         opts = {
             "Item": item,
         }
 
         if not allow_overwrite:
-            opts["ConditionExpression"] = Attr("pk").not_exists() & Attr("sk").not_exists()
-
-
-        TABLE.put_item(**opts)
-        
-        if zipfile:
-            Zipfile.create(
-                namespace=namespace,
-                system=system,
-                name=name,
-                version=version,
-                data=zipfile,
-                allow_overwrite=allow_overwrite
+            opts["ConditionExpression"] = (
+                Attr("pk").not_exists() & Attr("sk").not_exists()
             )
 
-        return cls(**item)
-
+        TABLE.put_item(**opts)

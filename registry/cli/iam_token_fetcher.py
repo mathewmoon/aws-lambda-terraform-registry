@@ -33,12 +33,6 @@ parser.add_argument(
     help="The hostname of the registry. Do not include the protocol.",
 )
 parser.add_argument(
-    "--token-host",
-    "-t",
-    type=str,
-    help="The hostname of the token endoint. Do not include the protocol. This is normally the same as the registry host.",
-)
-parser.add_argument(
     "--service",
     type=str,
     help="Choose 'execute-api' for AWS API Gateway and Lambda for direct Lambda URL invocation.",
@@ -48,7 +42,7 @@ args = parser.parse_args()
 
 
 def make_token():
-    url = f"https://{args.token_host}/token"
+    url = f"https://{args.registry_host}/token"
     res = requests.get(
         url,
         auth=AWSSigV4(service=args.service),

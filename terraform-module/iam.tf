@@ -64,6 +64,7 @@ data "aws_iam_policy_document" "terraform_registry" {
       "s3:GetObject",
       "s3:PutObject",
       "s3:ListBucket",
+      "s3:GetObjectAttributes",
     ]
     resources = [
       local.registry_bucket_arn,

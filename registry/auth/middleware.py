@@ -40,11 +40,9 @@ def authenticate(req: Request) -> Auth:
     try:
         auth_header = get_header(req, "Authorization")
     except KeyError:
-        auth_header = None
-        try:
-            token = req.query_params["x_registry_auth"]
-        except KeyError:
-            raise AuthError("Missing or invalid credentials", status=401)
+        raise AuthError("Missing Auth header", status=401)
+    if not auth_header:
+        raise AuthError("Missing or invalid credentials", status=401)
 
     if auth_header:
         try:
@@ -56,70 +54,7 @@ def authenticate(req: Request) -> Auth:
     return auth_cls(namespace=namespace, token=token)
 
 
-def is_authenticated(req: Request) -> bool:
-    """
-    Middleware for authenticating requests.
-
-    Args:
-        app (Resolver): The Resolver object.
-        next_middleware (NextMiddleware): The NextMiddleware object.
-
-    Returns:
-        Response: The response object.
-    """
-    
-    authenticate(req)
-
-    return True
-
-
-def download_auth(req: Request) -> True:
-    """
-    Middleware for authenticating requests.
-
-    Args:
-        app (Resolver): The Resolver object.
-        next_middleware (NextMiddleware): The NextMiddleware object.
-
-    Returns:
-        Response: The response object.
-    """
-    namespace = req.path_params["namespace"]
-    auth = authenticate(req)
-
-    if not (auth and auth.can_download(namespace)):
-        raise AuthError(
-            f"Not authorized to download from namespace {namespace}",
-            status=403,
-        )
-
-    return True
-
-
-def upload_auth(req: Request) -> None:
-    """
-    Middleware for authenticating requests.
-
-    Args:
-        app (Resolver): The Resolver object.
-        next_middleware (NextMiddleware): The NextMiddleware object.
-
-    Returns:
-        Response: The response object.
-    """
-    path_params = req.path_params
-
-    namespace = path_params["namespace"]
-
-    auth = authenticate(req)
-
-    if not (auth and auth.can_upload(namespace)):
-        raise AuthError(status=403)
-
-    return True
-
-
-def auth_wrapper(authorizor: Callable):
+def auth_wrapper(*perms: str) -> Callable:
     """
     Decorator function for checking user permissions.
 
@@ -133,7 +68,13 @@ def auth_wrapper(authorizor: Callable):
     def wrapper(func):
         @wraps(func)
         async def inner(*args, request: Request, **kwargs):
-            authorizor(request)
+            auth = authenticate(request)
+            for perm in perms:
+                if not auth.can(perm):
+                    raise AuthError(
+                        f"Not authorized to {perm} in namespace {auth.namespace}",
+                        status=403,
+                    )
 
             return await func(*args, request=request, **kwargs)
 

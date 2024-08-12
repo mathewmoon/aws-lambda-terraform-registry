@@ -7,12 +7,6 @@ import requests
 
 parser = ArgumentParser(description="A credential helper for Terraform Registry")
 parser.add_argument(
-    "--token-endpoint",
-    type=str,
-    help="The URL of the Terraform Registry",
-    required=True,
-)
-parser.add_argument(
     "--expiration-window",
     type=str,
     help="The number of seconds the token is good for",
@@ -25,16 +19,14 @@ parser.add_argument(
     "cmd", type=str, help="The command to run", choices=["get", "store", "forget"]
 )
 parser.add_argument(
-    "registry-host",
-    type=str,
-    help="The hostname of the Terraform Registry to auth for.",
+    "host", type=str, help="The hostname of the Terraform Registry to auth for."
 )
 args = parser.parse_args()
 
 
 def get_credentials():
     res = requests.get(
-        args.token_endpoint,
+        f"https://{args.host}/token",
         auth=AWSSigV4(service=args.service),
         params={"expiration_seconds": args.expiration_window},
     )

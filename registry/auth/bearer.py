@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 from abc import ABC, abstractmethod
 from base64 import b64encode, b64decode
+from json import dumps, loads, JSONDecodeError
 from time import time
 from hashlib import sha256
 from random import choice
 from string import ascii_letters, digits
-
+from typing import Any
 
 from .exceptions import AuthError
 from ..config import TABLE, KMS, MAX_TOKEN_EXPIRATION_WINDOW, IAM_AUTH_KMS_KEY, LOGGER
@@ -54,72 +55,86 @@ class Auth(ABC):
         """
         raise NotImplementedError
 
-    def get_db_key(self):
+    @classmethod
+    def get_db_key(cls, *, namespace: str, identifier: str):
         """
         Constructs the database key for the namespace and identifier.
 
         :return: A dictionary representing the database key.
         """
         key = {
-            "pk": self.namespace,
-            "sk": f"{self.__class__.__name__}~{self.identifier}",
+            "pk": namespace,
+            "sk": f"{cls.__name__}~{identifier}",
         }
 
         return key
 
-    def make_item(self, permissions: dict[str, dict] = {}):
+    @classmethod
+    def create_grant(
+        cls,
+        *,
+        identifier: str,
+        namespace: str,
+        permissions: dict[str, dict[str, bool]] = {},
+    ):
         """
         Creates an item dictionary with namespace, identifier, and permissions.
 
         :param permissions: A dictionary of permissions.
         :return: A dictionary representing the item.
         """
-        key = self.get_db_key()
+        key = cls.get_db_key(namespace=namespace, identifier=identifier)
+
         item = {
             **key,
-            "namespace": self.namespace,
-            "identifier": self.identifier,
+            "namespace": namespace,
+            "identifier": identifier,
             "permissions": permissions,
         }
 
+        TABLE.put_item(Item=item)
+
         return item
 
-    @property
-    def item(self):
-        """
-        Retrieves the item from the database or creates a new one if not found.
+    @classmethod
+    def delete_grant(cls, *, namespace: str, identifier: str):
+        key = cls.get_db_key(namespace=namespace, identifier=identifier)
+        TABLE.delete_item(Key=key)
 
-        :return: The item dictionary.
-        """
-        key = self.get_db_key()
-        res = TABLE.get_item(Key=key).get("Item")
-
-        if res is None:
-            res = self.make_item()
-
-        return res
-
-    def put(self, permissions: dict[str, dict] = {}):
+    @classmethod
+    def update_permissions(
+        cls,
+        *,
+        namespace: str,
+        identifier: str,
+        download: bool = None,
+        upload: bool = None,
+        create_grant: bool = None,
+        delete: bool = None,
+    ):
         """
         Updates the item in the database with new permissions.
 
         :param permissions: A dictionary of permissions.
         :return: The updated item dictionary.
         """
-        item = self.item
-        perms = {}
+        item = cls.get_grant(namespace=namespace, identifier=identifier)
+        permissions = {
+            "download": download,
+            "upload": upload,
+            "create_grant": create_grant,
+            "delete": delete,
+        }
+        permissions = {k: v for k, v in permissions.items() if v is not None}
 
-        for namespace, ns_perms in permissions.items():
-            perm = {
-                "download": ns_perms.get("download", False),
-                "upload": ns_perms.get("upload", False),
-            }
-            perms[namespace] = perm
+        if item is None:
+            raise ValueError(
+                f"Not grant found for {identifier} in namespace {namespace}"
+            )
 
-        item = self.make_item(permissions=perms)
-        TABLE.put_item(Item=item)
-
-        return self.item
+        return cls.create_grant(
+            namespace=namespace, identifier=identifier, permissions=permissions
+        )
 
     @property
     def permissions(self):
@@ -128,34 +143,10 @@ class Auth(ABC):
 
         :return: A dictionary of permissions.
         """
-        return self.item.get("permissions", {})
+        return self.grant.get("permissions", {})
 
-    def can_download(self, namespace: str):
-        """
-        Checks if the download permission is granted for a given namespace.
-
-        :param namespace: The namespace to check.
-        :return: True if download is permitted, False otherwise.
-        """
-        return self.item.get("permissions", {}).get(namespace, {}).get("download", False)
-
-    def can_upload(self, namespace: str):
-        """
-        Checks if the upload permission is granted for a given namespace.
-
-        :param namespace: The namespace to check.
-        :return: True if upload is permitted, False otherwise.
-        """
-        return self.item.get("permissions", {}).get(namespace, {}).get("upload", False)
-
-    @property
-    def namespaces(self):
-        """
-        Retrieves the list of namespaces from the permissions.
-
-        :return: A list of namespace strings.
-        """
-        return list(self.permissions.keys())
+    def can(self, op: str):
+        return self.grant and self.grant.get("permissions", {}).get(op, False)
 
 
 class BearerAuth(Auth):
@@ -203,9 +194,9 @@ class IAMBearerAuth(BearerAuth):
     used to verify the identity of the caller when used later.
 
     Tokens are created in the format:
-        IAMBearer~<role_arn>~<encrypted_data>
-    Encrypted data is a base64-encoded KMS-encrypted string of the format:
-        <role_arn> <expiration>
+        IAMBearer~<encrypted_data>
+    Encrypted data is a base64-encoded KMS-encrypted JSON string of the format:
+        {"role_arn": "<role_arn>", "expiration": <expiration_unix_timestamp>}
     """
 
     @classmethod
@@ -221,21 +212,21 @@ class IAMBearerAuth(BearerAuth):
         :raises AuthError: If the expiration window is too large.
         """
         if expiration_seconds > MAX_TOKEN_EXPIRATION_WINDOW:
-            raise AuthError(
+            raise ValueError(
                 f"Expiration window is too large. Max is {MAX_TOKEN_EXPIRATION_WINDOW} seconds",
-                status=400,
             )
 
         now = int(time())
         expiration = now + expiration_seconds
-        str_to_encrypt = f"{role_arn} {expiration}"
+
+        payload = dumps({"role_arn": role_arn, "expiration": expiration}).encode()
         res = KMS.encrypt(
             KeyId=IAM_AUTH_KMS_KEY,
-            Plaintext=str_to_encrypt.encode(),
+            Plaintext=payload,
         )["CiphertextBlob"]
 
         res = b64encode(res).decode()
-        token = f"{cls.__name__}~{role_arn}~{res}"
+        token = f"{cls.__name__}~{res}"
 
         return token
 
@@ -256,9 +247,6 @@ class IAMBearerAuth(BearerAuth):
                 f"Token expiration is too far in the future. Max window is {MAX_TOKEN_EXPIRATION_WINDOW} seconds"
             )
 
-        if self.decrypted_token.split(" ")[0] != self.role_arn:
-            raise AuthError("Token does not match the role arn")
-
     @property
     def role_arn(self):
         """
@@ -267,11 +255,7 @@ class IAMBearerAuth(BearerAuth):
         :return: The role ARN.
         :raises AuthError: If the token format is invalid.
         """
-        try:
-            arn = self.token.split("~")[1]
-        except IndexError:
-            raise AuthError("Invalid token format")
-        return arn
+        return self.decrypted_token["role_arn"]
 
     @property
     def decrypted_token(self):
@@ -281,11 +265,14 @@ class IAMBearerAuth(BearerAuth):
         """
         token_parts = self.token.split("~")
         try:
-            encrypted_data = token_parts[2]
+            payload = token_parts[1]
         except IndexError:
             raise AuthError("Invalid token format")
 
-        ciphertext = b64decode(encrypted_data)
+        try:
+            ciphertext = b64decode(payload)
+        except Exception as e:
+            raise AuthError(f"Invalid Token")
 
         try:
             decrypted_token = KMS.decrypt(
@@ -293,22 +280,44 @@ class IAMBearerAuth(BearerAuth):
             )["Plaintext"].decode()
         except Exception as e:
             LOGGER.exception(e)
-            raise AuthError(f"Token decryption failed")
+            raise AuthError(f"Invalid Token")
 
-        return decrypted_token
+        try:
+            token = loads(decrypted_token)
+        except JSONDecodeError:
+            raise AuthError(f"Invalid Token")
+        return token
+
+    @classmethod
+    def get_grant(cls, *, namespace: str, identifier: str):
+        """
+        Retrieves the item from the database or creates a new one if not found.
+
+        :return: The item dictionary.
+        """
+        key = cls.get_db_key(namespace=namespace, identifier=identifier)
+        res = TABLE.get_item(Key=key).get("Item")
+
+        return res
+
+    @property
+    def grant(self):
+        """
+        Retrieves the item from the database or creates a new one if not found.
+
+        :return: The item dictionary.
+        """
+        key = self.get_db_key(namespace=self.namespace, identifier=self.role_arn)
+        res = TABLE.get_item(Key=key).get("Item")
+
+        return res
 
     @property
     def expiration(self):
         """
         Returns the expiration time of the token as a Unix timestamp.
         """
-        parts = self.decrypted_token.split(" ")
-        if len(parts) != 2:
-            raise AuthError(
-                "Invalid encrypted token format. Expected '<role arn> <expiration>'"
-            )
-
-        return int(parts[1])
+        return self.decrypted_token["expiration"]
 
     @property
     def identifier(self):
