@@ -90,3 +90,27 @@ variable "registry_api_name" {
   type        = string
   default     = "terraform-registry"
 }
+
+variable "allowed_registry_identities" {
+  description = "The identities allowed to access the registry via resource policies"
+  type        = list(string)
+  default     = []
+}
+
+variable "allow_organization_access" {
+  description = "Whether to allow access to the registry from the entire organization"
+  type        = bool
+  default     = false
+}
+
+variable "domain_name" {
+  description = "The domain name for the API Gateway"
+  type        = string
+  default     = null
+}
+
+variable "certificate_arn" {
+  description = "The ARN of the ACM certificate to use for the API Gateway"
+  type        = string
+  default     = null
+}

@@ -27,6 +27,17 @@ from .. import routes
 
 @APP.exception_handler(Exception)
 def custom_exceptions(_: Any, e: Exception):
+    if isinstance(e, ValueError):
+        return Response(
+            status_code=400, content=str(e)
+        )
+
+    if isinstance(e, AuthError):
+        return Response(
+            status_code=e.status, content=str(e)
+        )
+
+    LOGGER.exception(e)
     return JSONResponse(
         status_code=500, content={"message": "Internal Server Error", "code": 500}
     )
@@ -186,7 +197,8 @@ def get_token(request: Request) -> str:
         user_arn = authorizor["userArn"]
 
     role_arn = parse_assumed_role(user_arn)
-    params = event.get("queryStringParameters", {})
+    params = event.get("queryStringParameters", {}) or {}
+
     expiration_seconds = int(
         params.get("expiration_seconds", MAX_TOKEN_EXPIRATION_WINDOW)
     )
@@ -211,13 +223,6 @@ def handler(event, ctx):
     """
     LOGGER.info(dumps(event, indent=2, default=lambda x: str(x)))
 
-    try:
-        res = MANGUM(event, ctx)
-        LOGGER.info(dumps(res, indent=2, default=lambda x: str(x)))
-        return res
-    except AuthError as e:
-        LOGGER.info(dumps(e.response, indent=2, default=lambda x: str(x)))
-        return make_lambda_response(status=e.status, body=str(e))
-    except Exception as e:
-        LOGGER.exception(e)
-        return make_lambda_response(status=500, body="Internal Server Error...")
+    res = MANGUM(event, ctx)
+    LOGGER.info(dumps(res, indent=2, default=lambda x: str(x)))
+    return res

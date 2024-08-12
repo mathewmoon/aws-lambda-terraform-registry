@@ -6,6 +6,5 @@ locals {
     RESOLVER_TYPE               = "API_GATEWAY_REST"
     MAX_TOKEN_EXPIRATION_WINDOW = 300
     IAM_AUTH_KMS_KEY            = aws_kms_alias.this.name
-    HOSTNAME                    = replace(aws_apigatewayv2_api.registry.api_endpoint, "https://", "")
   }
 }
