@@ -50,12 +50,6 @@ variable "registry_function_name" {
   default     = "terraform-registry"
 }
 
-variable "iam_auth_function_name" {
-  description = "The name of the IAM auth Lambda function"
-  type        = string
-  default     = "terraform-iam-token-endpoint"
-}
-
 variable "kms_alias" {
   description = "The alias of the KMS key to use for the application"
   type        = string
@@ -113,4 +107,12 @@ variable "certificate_arn" {
   description = "The ARN of the ACM certificate to use for the API Gateway"
   type        = string
   default     = null
+}
+
+variable "lambda_layers" {
+  description = "The ARNs of the Lambda layers to attach to the registry Lambda function"
+  type        = list(string)
+  default = [
+    "arn:aws:lambda:us-east-1:637423294718:layer:terraform-registry-deps:2"
+  ]
 }

@@ -110,7 +110,7 @@ class Auth(ABC):
         download: bool = None,
         upload: bool = None,
         create_grant: bool = None,
-        delete: bool = None,
+        delete_grant: bool = None,
     ):
         """
         Updates the item in the database with new permissions.
@@ -119,18 +119,20 @@ class Auth(ABC):
         :return: The updated item dictionary.
         """
         item = cls.get_grant(namespace=namespace, identifier=identifier)
-        permissions = {
-            "download": download,
-            "upload": upload,
-            "create_grant": create_grant,
-            "delete": delete,
-        }
-        permissions = {k: v for k, v in permissions.items() if v is not None}
 
         if item is None:
             raise ValueError(
                 f"Not grant found for {identifier} in namespace {namespace}"
             )
+
+        permissions = {
+            "download": download,
+            "upload": upload,
+            "create_grant": create_grant,
+            "delete_grant": delete_grant,
+        }
+        new_permissions = {k: v for k, v in permissions.items() if v is not None}
+        permissions = {**item.get("permissions", {}), **new_permissions}
 
         return cls.create_grant(
             namespace=namespace, identifier=identifier, permissions=permissions

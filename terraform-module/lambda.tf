@@ -8,5 +8,5 @@ module "registry_lambda" {
   role_arn         = aws_iam_role.registry_lambda_role.arn
   registry_version = "0.2.2"
   environment      = local.lambda_env_vars
-  auth_type        = "AWS_IAM"
+  layers           = var.lambda_layers
 }

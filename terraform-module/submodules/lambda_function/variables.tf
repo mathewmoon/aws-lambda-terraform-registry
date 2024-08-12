@@ -49,12 +49,8 @@ variable "registry_package" {
   default     = "lambda-terraform-module-registry"
 }
 
-variable "auth_type" {
-  description = "The type of authorization to use for the Lambda function"
-  type        = string
-
-  validation {
-    condition     = var.auth_type == "NONE" || var.auth_type == "AWS_IAM"
-    error_message = "auth_type must be either 'NONE' or 'AWS_IAM'"
-  }
+variable "layers" {
+  description = "The ARNs of the Lambda layers to attach to the function"
+  type        = list(string)
+  default     = []
 }
