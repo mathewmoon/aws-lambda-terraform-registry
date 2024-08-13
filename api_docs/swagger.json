@@ -1,0 +1,423 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "FastAPI",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/.well-known/terraform.json": {
+      "get": {
+        "summary": "Discovery",
+        "description": "Endpoint for serving the Terraform discovery JSON.\n\nReturns:\n    dict: The Terraform discovery JSON.",
+        "operationId": "discovery__well_known_terraform_json_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/modules/{namespace}/{name}/{system}/versions": {
+      "get": {
+        "summary": "Get Versions",
+        "description": "Endpoint for retrieving the versions of a Terraform module.\n\nArgs:\n    namespace (str): The namespace of the module.\n    system (str): The system of the module.\n    name (str): The name of the module.\n\nReturns:\n    dict: The response containing the versions of the module.",
+        "operationId": "get_versions_v1_modules__namespace___name___system__versions_get",
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Namespace"
+            }
+          },
+          {
+            "name": "system",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "System"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/modules/{namespace}/{name}/{system}/{version}/download": {
+      "get": {
+        "summary": "Get Download Url",
+        "description": "Returns back the download URL for the module inside of the response headers.",
+        "operationId": "get_download_url_v1_modules__namespace___name___system___version__download_get",
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Namespace"
+            }
+          },
+          {
+            "name": "system",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "System"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "headers": {
+              "X-Terraform-Get": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "The download URL for the module"
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/modules/{namespace}/{name}/{system}/{version}/create": {
+      "post": {
+        "summary": "Create Module",
+        "description": "Creates a new module in the registry with the given namespace, system, name, and version.\nThe checksum of the module is verified against the expected checksum. If the checksums match\nthen the module is created in the registry with the checsum stored as part of the object. Subsequent\ndownloads will validate that the checksum matches the expected checksum.",
+        "operationId": "create_module_v1_modules__namespace___name___system___version__create_post",
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Namespace"
+            }
+          },
+          {
+            "name": "system",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "System"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModuleStorage"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Module"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/token": {
+      "get": {
+        "summary": "Get Token",
+        "description": "Endpoint for generating temporary credentials based on IAM auth. Requests to this endpoint\nmust be signed with SigV4 using AWS credentials.\n\nReturns:\n    str: The response containing the temporary token to be used in API calls.",
+        "operationId": "get_token_token_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "title": "Response Get Token Token Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "DiscoveryResponse": {
+        "properties": {
+          "modules_v1": {
+            "type": "string",
+            "title": "Modules V1",
+            "default": "/v1/modules"
+          }
+        },
+        "type": "object",
+        "title": "DiscoveryResponse"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "Module": {
+        "properties": {
+          "namespace": {
+            "type": "string",
+            "title": "Namespace"
+          },
+          "system": {
+            "type": "string",
+            "title": "System"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "bucket": {
+            "type": "string",
+            "title": "Bucket"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "expected_checksum": {
+            "type": "string",
+            "title": "Expected Checksum"
+          }
+        },
+        "type": "object",
+        "required": [
+          "namespace",
+          "system",
+          "name",
+          "version",
+          "bucket",
+          "key",
+          "expected_checksum"
+        ],
+        "title": "Module"
+      },
+      "ModuleStorage": {
+        "properties": {
+          "bucket": {
+            "type": "string",
+            "title": "Bucket"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "expected_checksum": {
+            "type": "string",
+            "title": "Expected Checksum"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bucket",
+          "key",
+          "expected_checksum"
+        ],
+        "title": "ModuleStorage",
+        "description": "Used as a model for Post parameters that aren't\npart the Path parameters."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "VersionsResponse": {
+        "properties": {
+          "modules": {
+            "items": {
+              "$ref": "#/components/schemas/_VersionsObject"
+            },
+            "type": "array",
+            "title": "Modules"
+          }
+        },
+        "type": "object",
+        "required": [
+          "modules"
+        ],
+        "title": "VersionsResponse"
+      },
+      "_VersionObj": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "title": "_VersionObj"
+      },
+      "_VersionsObject": {
+        "properties": {
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/_VersionObj"
+            },
+            "type": "array",
+            "title": "Versions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "versions"
+        ],
+        "title": "_VersionsObject"
+      }
+    }
+  }
+}
