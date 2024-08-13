@@ -1,3 +1,7 @@
+resource "aws_api_gateway_account" "this" {
+  cloudwatch_role_arn = aws_iam_role.api_gw.arn
+}
+
 resource "aws_api_gateway_rest_api" "registry" {
   name        = "terraform-registry"
   description = "Terraform Registry API"
@@ -12,7 +16,7 @@ locals {
     }
     registry = {
       path   = "{proxy+}",
-      method = "GET",
+      method = "ANY",
       auth   = "NONE"
     }
   }

@@ -22,7 +22,6 @@ data "aws_iam_policy_document" "kms" {
       type = "AWS"
       identifiers = [
         aws_iam_role.registry_lambda_role.arn,
-        aws_iam_role.iam_endpoint_lambda_role.arn,
       ]
     }
   }

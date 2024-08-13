@@ -57,14 +57,14 @@ class Module(BaseModel, extra="ignore"):
             )
             return res["Checksum"]["ChecksumSHA256"]
         except KeyError:
-            LOGGER.info("No checksum found for {bucket}/{key}")
+            LOGGER.error(f"No checksum found for {bucket}/{key}")
             raise ValueError(
                 "Checksum not found. Make sure your object contains a SHA256 checksum."
             )
         except ClientError as e:
-            LOGGER.info("Client error when getting checksum for {bucket}/{key}")
+            LOGGER.error(f"Client error when getting checksum for {bucket}/{key}: {e}")
+
             if "Access Denied" in str(e):
-                LOGGER.info(e)
                 raise ValueError(
                     f"Access denied to bucket or object when accessing bucket {bucket} with key {key}."
                 )

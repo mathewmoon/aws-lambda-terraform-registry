@@ -222,6 +222,7 @@ class IAMBearerAuth(BearerAuth):
         expiration = now + expiration_seconds
 
         payload = dumps({"role_arn": role_arn, "expiration": expiration}).encode()
+
         res = KMS.encrypt(
             KeyId=IAM_AUTH_KMS_KEY,
             Plaintext=payload,

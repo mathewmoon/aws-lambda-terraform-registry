@@ -83,3 +83,43 @@ resource "aws_iam_role" "registry_lambda_role" {
     policy = data.aws_iam_policy_document.terraform_registry.json
   }
 }
+
+
+data "aws_iam_policy_document" "api_gw_assume_role" {
+  statement {
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["apigateway.amazonaws.com"]
+    }
+  }
+}
+
+data "aws_iam_policy_document" "api_gw" {
+  statement {
+    effect = "Allow"
+
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:DescribeLogGroups",
+      "logs:DescribeLogStreams",
+      "logs:PutLogEvents",
+      "logs:GetLogEvents",
+      "logs:FilterLogEvents",
+    ]
+
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role" "api_gw" {
+  name               = "api-gw-logging"
+  assume_role_policy = data.aws_iam_policy_document.api_gw_assume_role.json
+
+  inline_policy {
+    name   = "api-gw-cloudwatch"
+    policy = data.aws_iam_policy_document.api_gw.json
+  }
+}

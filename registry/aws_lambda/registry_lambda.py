@@ -37,6 +37,7 @@ def custom_exceptions(_: Any, e: Exception):
         return Response(status_code=e.status, content=str(e), media_type="text/plain")
 
     LOGGER.exception(e)
+
     return JSONResponse(
         status_code=500, content={"message": "Internal Server Error", "code": 500}
     )
@@ -56,9 +57,7 @@ async def discovery() -> dict:
 
 @APP.get(routes.versions)
 @auth_wrapper("download")
-async def get_versions(
-    namespace: str, system: str, name: str, request: Request
-) -> Response:
+async def get_versions(namespace: str, system: str, name: str, _: Request) -> Response:
     """
     Endpoint for retrieving the versions of a Terraform module.
 
@@ -80,7 +79,7 @@ async def get_versions(
 @APP.get(routes.get_download_url)
 @auth_wrapper("download")
 async def get_download_url(
-    namespace: str, system: str, name: str, version: str, request: Request
+    namespace: str, system: str, name: str, version: str, _: Request
 ) -> Response:
     """
     Returns back the download URL for the module inside of the response headers.
@@ -95,33 +94,30 @@ async def get_download_url(
     return Response(status_code=204, headers={"X-Terraform-Get": url})
 
 
-@APP.post(routes.upload_module)
+@APP.post(routes.create)
 @auth_wrapper("upload")
 async def upload_module(
     namespace: str,
     system: str,
     name: str,
     version: str,
-    bucket: str,
-    key: str,
     request: Request,
 ) -> Response:
-    module = Module.get(
-        namespace=namespace,
-        system=system,
-        name=name,
-        version=version,
-    )
-    if module:
-        return Response(status_code=409, body="Module already exists")
+    post_data = await request.json()
 
-    res = module.create_version(
-        namespace=namespace,
-        system=system,
-        name=name,
-        version=version,
+    module = Module.get(namespace=namespace, system=system, name=name, version=version)
+
+    if module:
+        return Response(
+            status_code=409, content="Module already exists", media_type="text/plain"
+        )
+
+    module = Module(
+        namespace=namespace, system=system, name=name, version=version, **post_data
     )
-    return Response(status_code=201, content=res)
+    module.create()
+
+    return JSONResponse(status_code=201, content=module.model_dump())
 
 
 @APP.get(routes.iam_token_endpoint)
@@ -162,8 +158,10 @@ def handler(event, ctx):
     Returns:
         Any: The response from the Mangum handler.
     """
-    LOGGER.info(dumps(event, indent=2, default=lambda x: str(x)))
+    LOGGER.debug(dumps(event, indent=2, default=lambda x: str(x)))
 
     res = MANGUM(event, ctx)
-    LOGGER.info(dumps(res, indent=2, default=lambda x: str(x)))
+
+    LOGGER.debug(dumps(res, indent=2, default=lambda x: str(x)))
+
     return res
