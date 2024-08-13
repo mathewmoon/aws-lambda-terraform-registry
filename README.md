@@ -194,9 +194,26 @@ Function URL then this would be the hostname for that URL. Note that if using th
 * `DISABLE_AUTH`: When explicitely set to "DISABLED" API endpoints will not require authorization.
 
 
+## Development
+If you want to disable auth for development you can do so by exporting `DISABLE_AUTH=DISABLED`. The value must be exact.
+
+
+### Running the API locally
+```
+> uvicorn run registry.aws_lambda.lambda_function:APP --port 8000 --reload
+```
+
+### Viewing API docs:
+Run the server locally and navigate to `/docs` or `/redoc`
+
+
+### Generating API documentation
+```
+> python3 -m "registry.cli.gen_docs" --swagger-output /some/path/index.html --openapi-output /some/path/openapi.json
+```
+
+
+
+
 ## TODO:
 * Implement managing grants via the API
-
-
-## API Documentation
----
