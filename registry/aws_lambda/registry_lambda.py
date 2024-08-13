@@ -9,9 +9,11 @@ from pydantic import ValidationError
 
 from .. import routes
 from ..auth import parse_assumed_role
-from ..models import (
+from ..models.module import (
     Module,
     ModuleStorage,
+)
+from ..models.responses import (
     DiscoveryResponse,
     VersionsResponse,
     url_response,

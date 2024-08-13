@@ -252,11 +252,13 @@
         "properties": {
           "modules_v1": {
             "type": "string",
-            "title": "Modules V1",
-            "default": "/v1/modules"
+            "title": "Modules V1"
           }
         },
         "type": "object",
+        "required": [
+          "modules_v1"
+        ],
         "title": "DiscoveryResponse"
       },
       "HTTPValidationError": {

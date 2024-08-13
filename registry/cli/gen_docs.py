@@ -35,8 +35,8 @@ def main():
         with open(args.swagger_output, "w") as f:
             dump(docs, f, indent=2)
 
-        if not (which("node") and which("npx")):
-            print("Node.js and npx are required to build the documentation.")
+        if not (which("node") and which("npx") and which("tidy")):
+            print("Node.js, xmllint and tidy-html5 are required to build the documentation.")
             exit(1)
 
         try:
@@ -45,12 +45,25 @@ def main():
                     "npx",
                     "@redocly/cli",
                     "build-docs",
-                    "swagger.json",
+                    args.swagger_output,
                     "-o",
                     args.redoc_output,
                 ],
             )
             proc.communicate()
+            proc = Popen(
+                [
+                    "tidy",
+                    "-i",
+                    "-q",
+                    "-m",
+                    "--drop-empty-elements",
+                    "no",
+                    args.redoc_output,
+                ]
+            )
+            proc.communicate()
+
         except Exception as e:
             print(e)
     except Exception as e:

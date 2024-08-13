@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-from typing import Any, Self, TypedDict
+from typing import Self
 
 from pydantic import BaseModel, ConfigDict, model_validator
 from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
 
-from .config import BASE_URI, S3, LOGGER, TABLE
+from ..config import S3, LOGGER, TABLE
 
 
 class ModuleStorage(BaseModel):
@@ -166,37 +166,3 @@ class Module(BaseModel, extra="ignore"):
             )
 
         TABLE.put_item(**opts)
-
-
-class DiscoveryResponse(BaseModel):
-    modules_v1: str = BASE_URI
-
-
-class _VersionObj(TypedDict):
-    version: str
-
-
-class _VersionsObject(TypedDict):
-    versions: list[_VersionObj]
-
-
-class VersionsResponse(BaseModel):
-    modules: list[_VersionsObject]
-
-
-class UrlResponse(BaseModel):
-    X_Terraform_Get: str
-
-
-url_response = {
-    "responses": {
-        200: {
-            "headers": {
-                "X-Terraform-Get": {
-                    "schema": {"type": "string"},
-                    "description": "The download URL for the module",
-                }
-            }
-        }
-    }
-}
