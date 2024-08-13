@@ -6,6 +6,8 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, Response
 
 from pydantic import ValidationError
+
+from .. import routes
 from ..auth import parse_assumed_role
 from ..models import (
     Module,
@@ -23,7 +25,6 @@ from ..config import (
 from ..auth.bearer import IAMBearerAuth
 from ..auth.middleware import auth_wrapper
 from ..auth.exceptions import AuthError
-from .. import routes
 
 
 @APP.exception_handler(Exception)
