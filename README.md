@@ -2,7 +2,7 @@
 This repository contains all of the pieces needed to both host, and use, a Terraform Module registry hosted on AWS Lambda.
 
 # API (Swagger and Redoc) Documentation is available [here](https://mathewmoon.github.io/aws-lambda-terraform-registry)
-# Terraform module documentation available [here](terraform-modules/README.md)
+# Terraform module documentation available [here](terraform-module/README.md)
 
 
 ## Installation

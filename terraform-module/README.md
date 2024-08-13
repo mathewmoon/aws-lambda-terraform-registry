@@ -31,6 +31,7 @@ KMS Key
 
 | Name | Type |
 |------|------|
+| [aws_api_gateway_account.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/api_gateway_account) | resource |
 | [aws_api_gateway_base_path_mapping.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/api_gateway_base_path_mapping) | resource |
 | [aws_api_gateway_deployment.registry](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/api_gateway_deployment) | resource |
 | [aws_api_gateway_domain_name.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/api_gateway_domain_name) | resource |
@@ -41,7 +42,7 @@ KMS Key
 | [aws_api_gateway_rest_api_policy.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/api_gateway_rest_api_policy) | resource |
 | [aws_api_gateway_stage.api](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/api_gateway_stage) | resource |
 | [aws_dynamodb_table.registry](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/dynamodb_table) | resource |
-| [aws_iam_role.iam_endpoint_lambda_role](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
+| [aws_iam_role.api_gw](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
 | [aws_iam_role.registry_lambda_role](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
 | [aws_kms_alias.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_alias) | resource |
 | [aws_kms_key.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_key) | resource |
@@ -49,7 +50,8 @@ KMS Key
 | [aws_lambda_permission.registry](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_permission) | resource |
 | [aws_caller_identity.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/caller_identity) | data source |
 | [aws_iam_policy_document.api](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
-| [aws_iam_policy_document.iam_auth_lambda](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
+| [aws_iam_policy_document.api_gw](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
+| [aws_iam_policy_document.api_gw_assume_role](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
 | [aws_iam_policy_document.kms](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
 | [aws_iam_policy_document.lambda_assume_role](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
 | [aws_iam_policy_document.terraform_registry](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
@@ -75,8 +77,8 @@ KMS Key
 | <a name="input_dynamodb_table_name"></a> [dynamodb\_table\_name](#input\_dynamodb\_table\_name) | The name of the DynamoDB table | `string` | `"terraform-registry"` | no |
 | <a name="input_dynamodb_ttl"></a> [dynamodb\_ttl](#input\_dynamodb\_ttl) | The TTL attribute of the DynamoDB table | `string` | `"TTL"` | no |
 | <a name="input_dynamodb_write_capacity"></a> [dynamodb\_write\_capacity](#input\_dynamodb\_write\_capacity) | The write capacity unitis of the DynamoDB table | `number` | `5` | no |
-| <a name="input_iam_auth_function_name"></a> [iam\_auth\_function\_name](#input\_iam\_auth\_function\_name) | The name of the IAM auth Lambda function | `string` | `"terraform-iam-token-endpoint"` | no |
 | <a name="input_kms_alias"></a> [kms\_alias](#input\_kms\_alias) | The alias of the KMS key to use for the application | `string` | `"alias/terraform-registry"` | no |
+| <a name="input_lambda_layers"></a> [lambda\_layers](#input\_lambda\_layers) | The ARNs of the Lambda layers to attach to the registry Lambda function | `list(string)` | <pre>[<br>  "arn:aws:lambda:us-east-1:637423294718:layer:terraform-registry-deps:2"<br>]</pre> | no |
 | <a name="input_registry_api_name"></a> [registry\_api\_name](#input\_registry\_api\_name) | The name of the API Gateway | `string` | `"terraform-registry"` | no |
 | <a name="input_registry_function_name"></a> [registry\_function\_name](#input\_registry\_function\_name) | The name of the registry Lambda function | `string` | `"terraform-registry"` | no |
 
