@@ -103,6 +103,21 @@ async def upload_module(
     version: str,
     request: Request,
 ) -> Response:
+    """
+    Creates a new module in the registry with the given namespace, system, name, and version.
+    The checksum of the module is verified against the expected checksum. If the checksums match
+    then the module is created in the registry with the checsum stored as part of the object. Subsequent
+    downloads will validate that the checksum matches the expected checksum.
+
+        Args:
+        namespace (str): The namespace of the module.
+        system (str): The system of the module.
+        name (str): The name of the module.
+        version (str): The version of the module.
+        bucket (str): The S3 bucket where the module is stored.
+        key (str): The S3 key where the module is stored.
+        expected_checksum (str): The expected checksum of the module.
+    """
     post_data = await request.json()
 
     module = Module.get(namespace=namespace, system=system, name=name, version=version)
@@ -123,7 +138,8 @@ async def upload_module(
 @APP.get(routes.iam_token_endpoint)
 def get_token(request: Request) -> str:
     """
-    Endpoint for generating temporary credentials based on IAM auth
+    Endpoint for generating temporary credentials based on IAM auth. Requests to this endpoint
+    must be signed with SigV4 using AWS credentials.
 
     Returns:
         str: The response containing the temporary credentials.
