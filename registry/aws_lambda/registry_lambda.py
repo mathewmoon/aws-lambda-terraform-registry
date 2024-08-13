@@ -132,7 +132,7 @@ async def create_module(
     return JSONResponse(status_code=201, content=module.model_dump())
 
 
-@APP.get(routes.iam_token_endpoint, response_model=str)
+@APP.get(routes.iam_token_endpoint, response_model=str, openapi_extra=url_response)
 def get_token(request: Request) -> str:
     """
     Endpoint for generating temporary credentials based on IAM auth. Requests to this endpoint

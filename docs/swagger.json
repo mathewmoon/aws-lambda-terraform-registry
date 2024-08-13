@@ -233,13 +233,12 @@
         "operationId": "get_token_token_get",
         "responses": {
           "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
+            "headers": {
+              "X-Terraform-Get": {
                 "schema": {
-                  "type": "string",
-                  "title": "Response Get Token Token Get"
-                }
+                  "type": "string"
+                },
+                "description": "The download URL for the module"
               }
             }
           }
