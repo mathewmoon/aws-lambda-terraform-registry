@@ -162,9 +162,6 @@ as these conditions are met:
 Namespaces exist as soon as there is module that references it. In other words, you don't
 need an operation dedicated to creating namespaces.
 
-#### Example of creating a new module
-TODO: Explain and implement this.......
-
 
 ## Authentication
 While the registry technically supports simple Bearer auth using non-expiring tokens, it is highly discouraged. One of the main
@@ -183,10 +180,19 @@ by setting the `MAX_IAM_TOKEN_EXPIRATION_WINDOW` env var.
 * The token that is returned from the token API endpoint is used as a Bearer token in all API requests.
 
 
-## Registry Configuration
+## Registry Configuration via ENV vars
 
 * `TABLE_NAME`: The name of the Dynamodb table used.
 * `RESOLVER_TYPE`: Can be one of `FUNCTION_URL`, `API_GATEWAY_REST`, `API_GATEWAY_HTTP`, or `ALB`. Defaults to `FUNCTION_URL`. This is used to resolve the `Resolver` class
 to use by the AWS Lambda Powertools layer. Although the included Terraform uses an API Gateway V2 HTTP API, the `API_GATEWAY_REST` resolver actually works best.
 Function URL then this would be the hostname for that URL. Note that if using the Function URL you would use the Function that actually hosts the registry, and not the auth endpoint.
 * `IAM_AUTH_KMS_KEY`: Arn of a KMS key to use for encrypting and decrypting tokens.
+* `DISABLE_AUTH`: When explicitely set to "DISABLED" API endpoints will not require authorization.
+
+
+## TODO:
+* Implement managing grants via the API
+
+
+## API Documentation
+---

@@ -19,7 +19,7 @@ MANGUM = Mangum(APP, lifespan="off")
 BASE_URI = "/v1/modules"
 LOGGER = getLogger(__name__)
 IAM_AUTH_KMS_KEY = environ.get("IAM_AUTH_KMS_KEY", "alias/terraform-registry")
-
+DISABLE_AUTH = True if environ.get("DISABLE_AUTH") == "DISABLED" else False
 
 if not environ.get("AWS_LAMBDA_FUNCTION_NAME"):
     LOGGER.addHandler(StreamHandler(stdout))

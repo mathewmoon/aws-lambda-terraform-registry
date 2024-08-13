@@ -6,6 +6,7 @@ from fastapi import Request
 
 from .bearer import Auth, get_auth_type
 from .exceptions import AuthError
+from ..config import DISABLE_AUTH
 
 
 def parse_path(event: dict) -> dict:
@@ -68,6 +69,9 @@ def auth_wrapper(*perms: str) -> Callable:
     def wrapper(func):
         @wraps(func)
         async def inner(*args, request: Request, **kwargs):
+            if DISABLE_AUTH:
+                return await func(*args, request=request, **kwargs)
+
             auth = authenticate(request)
             for perm in perms:
                 if not auth.can(perm):

@@ -7,11 +7,16 @@ from fastapi.responses import JSONResponse, Response
 
 from pydantic import ValidationError
 from ..auth import parse_assumed_role
-from ..models import Module
+from ..models import (
+    Module,
+    ModuleStorage,
+    DiscoveryResponse,
+    VersionsResponse,
+    url_response,
+)
 from ..config import (
     APP,
     MANGUM,
-    BASE_URI,
     LOGGER,
     MAX_TOKEN_EXPIRATION_WINDOW,
 )
@@ -43,21 +48,23 @@ def custom_exceptions(_: Any, e: Exception):
     )
 
 
-@APP.get(routes.well_known)
-async def discovery() -> dict:
+@APP.get(routes.well_known, response_model=DiscoveryResponse)
+async def discovery(request: Request) -> Response:
     """
     Endpoint for serving the Terraform discovery JSON.
 
     Returns:
         dict: The Terraform discovery JSON.
     """
-    data = {"modules.v1": BASE_URI}
+    data = JSONResponse(status_code=200, content=DiscoveryResponse().model_dump())
     return data
 
 
-@APP.get(routes.versions)
+@APP.get(routes.versions, response_model=VersionsResponse)
 @auth_wrapper("download")
-async def get_versions(namespace: str, system: str, name: str, _: Request) -> Response:
+async def get_versions(
+    namespace: str, system: str, name: str, request: Request
+) -> Response:
     """
     Endpoint for retrieving the versions of a Terraform module.
 
@@ -76,10 +83,10 @@ async def get_versions(namespace: str, system: str, name: str, _: Request) -> Re
     )
 
 
-@APP.get(routes.get_download_url)
+@APP.get(routes.get_download_url, response_model=str, openapi_extra=url_response)
 @auth_wrapper("download")
 async def get_download_url(
-    namespace: str, system: str, name: str, version: str, _: Request
+    namespace: str, system: str, name: str, version: str, request: Request
 ) -> Response:
     """
     Returns back the download URL for the module inside of the response headers.
@@ -94,32 +101,22 @@ async def get_download_url(
     return Response(status_code=204, headers={"X-Terraform-Get": url})
 
 
-@APP.post(routes.create)
+@APP.post(routes.create, response_model=Module)
 @auth_wrapper("upload")
-async def upload_module(
+async def create_module(
     namespace: str,
     system: str,
     name: str,
     version: str,
     request: Request,
+    post_data: ModuleStorage,
 ) -> Response:
     """
     Creates a new module in the registry with the given namespace, system, name, and version.
     The checksum of the module is verified against the expected checksum. If the checksums match
     then the module is created in the registry with the checsum stored as part of the object. Subsequent
     downloads will validate that the checksum matches the expected checksum.
-
-        Args:
-        namespace (str): The namespace of the module.
-        system (str): The system of the module.
-        name (str): The name of the module.
-        version (str): The version of the module.
-        bucket (str): The S3 bucket where the module is stored.
-        key (str): The S3 key where the module is stored.
-        expected_checksum (str): The expected checksum of the module.
     """
-    post_data = await request.json()
-
     module = Module.get(namespace=namespace, system=system, name=name, version=version)
 
     if module:
@@ -135,14 +132,14 @@ async def upload_module(
     return JSONResponse(status_code=201, content=module.model_dump())
 
 
-@APP.get(routes.iam_token_endpoint)
+@APP.get(routes.iam_token_endpoint, response_model=str)
 def get_token(request: Request) -> str:
     """
     Endpoint for generating temporary credentials based on IAM auth. Requests to this endpoint
     must be signed with SigV4 using AWS credentials.
 
     Returns:
-        str: The response containing the temporary credentials.
+        str: The response containing the temporary token to be used in API calls.
     """
     event = request.scope["aws.event"]
     req_ctx = event["requestContext"]
