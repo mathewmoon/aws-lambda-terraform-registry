@@ -213,7 +213,15 @@ Run the server locally and navigate to `/docs` or `/redoc`
 ```
 
 
-
-
 ## TODO:
 * Implement managing grants via the API
+* Documentation for JWT auth
+* Automatically check for new keys if kid for token isn't in jwk
+* Automatically add remote JWKS to db on create by looking up the issuer
+* Add super admin role
+* Fix credentials helper so it returns the correct response for other hosts aside from ours
+* Validate resource names
+* Implement uploading modules with pre-signed urls. Set max size config option
+* Validate modules on creation
+* Enable pulling README.md from the API
+  * Maybe zip and stick it in the db???

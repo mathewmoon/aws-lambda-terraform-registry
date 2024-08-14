@@ -18,18 +18,17 @@ from ..models.responses import (
     VersionsResponse,
     url_response,
 )
-from ..config import (
-    APP,
-    MANGUM,
-    LOGGER,
-    MAX_TOKEN_EXPIRATION_WINDOW,
-)
+from ..globals import Clients, logger, RegistryConfig
 from ..auth.bearer import IAMBearerAuth
 from ..auth.middleware import auth_wrapper
 from ..auth.exceptions import AuthError
 
 
-@APP.exception_handler(Exception)
+clients = Clients()
+config = RegistryConfig()
+
+
+@clients.app.exception_handler(Exception)
 def custom_exceptions(_: Any, e: Exception):
     if isinstance(e, ValidationError):
         try:
@@ -44,14 +43,14 @@ def custom_exceptions(_: Any, e: Exception):
     if isinstance(e, AuthError):
         return Response(status_code=e.status, content=str(e), media_type="text/plain")
 
-    LOGGER.exception(e)
+    logger.exception(e)
 
     return JSONResponse(
         status_code=500, content={"message": "Internal Server Error", "code": 500}
     )
 
 
-@APP.get(routes.well_known, response_model=DiscoveryResponse)
+@clients.app.get(routes.well_known, response_model=DiscoveryResponse)
 async def discovery(request: Request) -> Response:
     """
     Endpoint for serving the Terraform discovery JSON.
@@ -63,7 +62,7 @@ async def discovery(request: Request) -> Response:
     return data
 
 
-@APP.get(routes.versions, response_model=VersionsResponse)
+@clients.app.get(routes.versions, response_model=VersionsResponse)
 @auth_wrapper(Operation.download)
 async def get_versions(
     namespace: str, system: str, name: str, request: Request
@@ -86,7 +85,9 @@ async def get_versions(
     )
 
 
-@APP.get(routes.get_download_url, response_model=str, openapi_extra=url_response)
+@clients.app.get(
+    routes.get_download_url, response_model=str, openapi_extra=url_response
+)
 @auth_wrapper(Operation.download)
 async def get_download_url(
     namespace: str, system: str, name: str, version: str, request: Request
@@ -104,7 +105,7 @@ async def get_download_url(
     return Response(status_code=204, headers={"X-Terraform-Get": url})
 
 
-@APP.post(routes.create, response_model=Module)
+@clients.app.post(routes.create, response_model=Module)
 @auth_wrapper(Operation.upload)
 async def create_module(
     namespace: str,
@@ -115,9 +116,9 @@ async def create_module(
     post_data: ModuleStorage,
 ) -> Response:
     """
-    Creates a new module in the registry with the given namespace, system, name, and version.
+    Creates a new module in the clients with the given namespace, system, name, and version.
     The checksum of the module is verified against the expected checksum. If the checksums match
-    then the module is created in the registry with the checsum stored as part of the object. Subsequent
+    then the module is created in the clients with the checsum stored as part of the object. Subsequent
     downloads will validate that the checksum matches the expected checksum.
     """
     module = Module.get(namespace=namespace, system=system, name=name, version=version)
@@ -135,7 +136,9 @@ async def create_module(
     return JSONResponse(status_code=201, content=module.model_dump())
 
 
-@APP.get(routes.iam_token_endpoint, response_model=str, openapi_extra=url_response)
+@clients.app.get(
+    routes.iam_token_endpoint, response_model=str, openapi_extra=url_response
+)
 def get_token(request: Request) -> str:
     """
     Endpoint for generating temporary credentials based on IAM auth. Requests to this endpoint
@@ -153,7 +156,7 @@ def get_token(request: Request) -> str:
     params = event.get("queryStringParameters", {}) or {}
 
     expiration_seconds = int(
-        params.get("expiration_seconds", MAX_TOKEN_EXPIRATION_WINDOW)
+        params.get("expiration_seconds", config.max_token_expration_window)
     )
 
     token = IAMBearerAuth.make_token(
@@ -174,10 +177,10 @@ def handler(event, ctx):
     Returns:
         Any: The response from the Mangum handler.
     """
-    LOGGER.debug(dumps(event, indent=2, default=lambda x: str(x)))
+    logger.debug(dumps(event, indent=2, default=lambda x: str(x)))
 
-    res = MANGUM(event, ctx)
+    res = clients.mangum(event, ctx)
 
-    LOGGER.debug(dumps(res, indent=2, default=lambda x: str(x)))
+    logger.debug(dumps(res, indent=2, default=lambda x: str(x)))
 
     return res

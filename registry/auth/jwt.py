@@ -8,9 +8,7 @@ from fnmatch import fnmatch
 from json import dumps, loads
 from re import compile
 import jwt.algorithms
-from requests import get
-from time import time
-from typing import Any, Dict, List, NamedTuple, Optional
+from typing import Any, Optional, Self
 
 from jwt.exceptions import (
     DecodeError,
@@ -22,18 +20,18 @@ from jwt.exceptions import (
     MissingRequiredClaimError,
 )
 import jwt
+from pydantic import BaseModel, PrivateAttr
 
-from pydantic import BaseModel
-
-from . import Auth, Permissions, Operation
+from . import Auth, Permissions
 from .exceptions import AuthError
 
-from ..config import LOGGER, NO_VERIFY_JWT_EXP
+from ..globals import logger, RegistryConfig
 
 
+AUTH_CACHE = {}
+PUB_KEY_CACHE = {}
 URL_REGEX = compile(r"^http(s?)://.*\.[a-zA-Z]$")
-KMS_REGEX = compile(f"arn:aws:kms:(.*):[0-9]{16}:key/(.*)")
-AUTH_CACHE: dict[str, dict[str, any]] = {}
+config = RegistryConfig()
 
 
 class ClaimMatchType(StrEnum):
@@ -46,7 +44,7 @@ class BoundClaim(BaseModel):
     match_type: ClaimMatchType
     value: str
 
-    def validate_claim(self, data: Dict[str, Any]):
+    def validate_claim(self, data: dict[str, Any]):
         assert self.name in data
         if self.match_type == ClaimMatchType.glob:
             assert fnmatch(data[self.name], self.value)
@@ -57,9 +55,7 @@ class BoundClaim(BaseModel):
 
 
 class JWTAuth(Auth):
-    """
-    Represents a permission grant for a repository.
-    """
+    _grant: dict[str, Any] = PrivateAttr()
 
     @property
     def issuer(self):
@@ -108,10 +104,12 @@ class JWTAuth(Auth):
         key = None
         kid = self.unverified_payload[0]["kid"]
 
+        if key := PUB_KEY_CACHE.get(self.issuer, {}).get(kid):
+            return key
+
         try:
             if res:
                 res["keys"] = [x for x in res["keys"] if x["kid"] == kid]
-
                 if res["keys"]:
                     jwks = dumps(res["keys"][0])
                     pub_key = jwt.algorithms.RSAAlgorithm.from_jwk(jwks)
@@ -124,12 +122,17 @@ class JWTAuth(Auth):
                 client = jwt.PyJWKClient(self.issuer)
                 key = client.get_signing_key_from_jwt(self.jwt).key
         except (IndexError, KeyError):
-            pass
+            logger.debug(f"Key not found in JWKS")
         except Exception as e:
-            LOGGER.error(f"Error getting key: {e}")
+            logger.error(f"Error getting key: {e}")
 
         if key is None:
             raise AuthError("Invalid issuer", status=401)
+
+        if self.issuer not in PUB_KEY_CACHE:
+            PUB_KEY_CACHE[self.issuer] = {kid: key}
+        else:
+            PUB_KEY_CACHE[self.issuer].update({kid: key})
 
         return key
 
@@ -139,13 +142,17 @@ class JWTAuth(Auth):
 
     @property
     def bound_claims(self):
-        return [BoundClaim(**claim) for claim in self.grant["bound_claims"]]
+        return [BoundClaim(**claim) for claim in self.grant.get("bound_claims", [])]
 
     def validate_bound_claims(
         self,
     ) -> None:
         for claim in self.bound_claims:
-            claim.validate_claim(self.unverified_payload[1])
+            claim.validate_claim(self.verified_payload)
+
+    @property
+    def verified_payload(self):
+        return self.validate()
 
     @classmethod
     def get_unverified_payload(self, token):
@@ -160,7 +167,7 @@ class JWTAuth(Auth):
             )
             payload["kid"] = header["kid"]
         except Exception as e:
-            LOGGER.error(f"Error decoding token: {e}")
+            logger.error(f"Error decoding token: {e}")
             raise InvalidTokenError()
 
         return header, payload
@@ -173,7 +180,7 @@ class JWTAuth(Auth):
     def make_token(cls):
         pass
 
-    def validate(self):
+    def decode_jwt(self):
         opts = {
             "issuer": self.issuer,
             "jwt": self.jwt,
@@ -182,7 +189,7 @@ class JWTAuth(Auth):
             "audience": self.aud,
             "options": {},
         }
-        opts["options"]["verify_exp"] = not NO_VERIFY_JWT_EXP
+        opts["options"]["verify_exp"] = not config.no_verify_jwt_exp
 
         try:
             data = jwt.decode(**opts)
@@ -195,12 +202,25 @@ class JWTAuth(Auth):
             InvalidTokenError,
             DecodeError,
         ) as e:
-            LOGGER.debug(f"JWT Error: {e}")
+            logger.debug(f"JWT Error: {e}")
             raise AuthError(status=401, detail="Invalid token")
 
-        self.validate_bound_claims()
-
         return data
+
+    def validate(self) -> Self:
+        self._grant = self.get_grant(
+            namespace=self.namespace, issuer=self.issuer, subject=self.subject
+        )
+
+        if self.jwt not in AUTH_CACHE:
+            AUTH_CACHE[self.jwt] = self.decode_jwt()
+
+            return AUTH_CACHE[self.jwt]
+
+        self.validate_bound_claims()
+        AUTH_CACHE[self.jwt] = self.decode_jwt()
+
+        return self
 
     @classmethod
     def get_grant(cls, *, namespace: str, issuer: str, subject: str):
@@ -211,5 +231,4 @@ class JWTAuth(Auth):
         """
         identifier = cls.get_identifier(issuer=issuer, subject=subject)
         res = super().get_grant(namespace=namespace, identifier=identifier)
-
         return res

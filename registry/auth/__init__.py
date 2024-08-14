@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 from abc import ABC, abstractmethod
 from enum import auto, StrEnum
+from typing import Self
+from pydantic import BaseModel, model_validator
 
-from pydantic import BaseModel
+from ..globals import Clients
 
-from ..config import TABLE
+
+clients = Clients()
 
 
 class Permissions(BaseModel):
@@ -21,19 +24,20 @@ class Operation(StrEnum):
     delete_grant = auto()
 
 
-class Auth(ABC):
-    def __init__(self, token: str, namespace: str, **kwargs: dict[str, any]):
-        """
-        Initialize the Auth object with a token and namespace.
-        Validates the token upon initialization.
+class Auth(BaseModel, ABC):
+    token: str
+    namespace: str
 
-        :param token: The authentication token.
-        :param namespace: The namespace identifier.
+    @model_validator(mode="after")
+    def model_validator(self) -> Self:
         """
-        self.token = token
-        self.namespace = namespace
-        self.__dict__.update(kwargs)
+        Abstract method to validate the token.
+        Must be implemented by subclasses.
+
+        :raises NotImplementedError: If not implemented in subclass.
+        """
         self.validate()
+        return self
 
     @property
     def auth_type(self):
@@ -73,7 +77,7 @@ class Auth(ABC):
         :return: The item dictionary.
         """
         key = self.get_db_key(namespace=self.namespace, identifier=self.identifier)
-        res = TABLE.get_item(Key=key).get("Item")
+        res = clients.table.get_item(Key=key).get("Item")
 
         return res
 
@@ -108,7 +112,7 @@ class Auth(ABC):
         :return: The item dictionary.
         """
         key = cls.get_db_key(namespace=namespace, identifier=identifier)
-        res = TABLE.get_item(Key=key).get("Item")
+        res = clients.table.get_item(Key=key).get("Item")
         return res
 
     @classmethod
@@ -157,14 +161,14 @@ class Auth(ABC):
             **kwargs,
         }
 
-        TABLE.put_item(Item=item)
+        clients.table.put_item(Item=item)
 
         return item
 
     @classmethod
     def delete_grant(cls, *, namespace: str, identifier: str):
         key = cls.get_db_key(namespace=namespace, identifier=identifier)
-        TABLE.delete_item(Key=key)
+        clients.table.delete_item(Key=key)
 
     @classmethod
     def update_permissions(

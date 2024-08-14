@@ -6,11 +6,15 @@ from time import time
 from hashlib import sha256
 from random import choice
 from string import ascii_letters, digits
-from typing import Any
+from typing import Self
 
 from .exceptions import AuthError
-from . import Auth
-from ..config import TABLE, KMS, MAX_TOKEN_EXPIRATION_WINDOW, IAM_AUTH_KMS_KEY, LOGGER
+from . import Auth, model_validator
+from ..globals import logger, Clients, RegistryConfig
+
+
+clients = Clients()
+config = RegistryConfig()
 
 
 class BearerAuth(Auth):
@@ -20,7 +24,8 @@ class BearerAuth(Auth):
 
     min_token_length = 64
 
-    def validate(self):
+    @model_validator(mode="after")
+    def validate(self) -> Self:
         """
         Validates the token by checking its length.
 
@@ -30,6 +35,7 @@ class BearerAuth(Auth):
             raise AuthError(
                 f"Token must be at least {self.min_token_length} characters long"
             )
+        return self
 
     @property
     def identifier(self):
@@ -54,18 +60,20 @@ class BearerAuth(Auth):
 
 class IAMBearerAuth(BearerAuth):
     """
-    Generates Bearer tokens that are encrypted with KMS, using a method that allows them to be
+    Generates Bearer tokens that are encrypted with clients.kms, using a method that allows them to be
     used to verify the identity of the caller when used later.
 
     Tokens are created in the format:
         IAMBearer~<encrypted_data>
-    Encrypted data is a base64-encoded KMS-encrypted JSON string of the format:
+    Encrypted data is a base64-encoded clients.kms-encrypted JSON string of the format:
         {"role_arn": "<role_arn>", "expiration": <expiration_unix_timestamp>}
     """
 
     @classmethod
     def make_token(
-        cls, role_arn: str, expiration_seconds: int = MAX_TOKEN_EXPIRATION_WINDOW
+        cls,
+        role_arn: str,
+        expiration_seconds: int = config.max_client_expiration_window,
     ):
         """
         Creates a token for the given role ARN with an expiration time.
@@ -75,9 +83,9 @@ class IAMBearerAuth(BearerAuth):
         :return: The generated token.
         :raises AuthError: If the expiration window is too large.
         """
-        if expiration_seconds > MAX_TOKEN_EXPIRATION_WINDOW:
+        if expiration_seconds > config.max_client_expiration_window:
             raise ValueError(
-                f"Expiration window is too large. Max is {MAX_TOKEN_EXPIRATION_WINDOW} seconds",
+                f"Expiration window is too large. Max is {config.max_client_expiration_window} seconds",
             )
 
         now = int(time())
@@ -85,8 +93,8 @@ class IAMBearerAuth(BearerAuth):
 
         payload = dumps({"role_arn": role_arn, "expiration": expiration}).encode()
 
-        res = KMS.encrypt(
-            KeyId=IAM_AUTH_KMS_KEY,
+        res = clients.kms.encrypt(
+            KeyId=config.iam_auth_kms_key,
             Plaintext=payload,
         )["CiphertextBlob"]
 
@@ -107,9 +115,9 @@ class IAMBearerAuth(BearerAuth):
         if now > self.expiration:
             raise AuthError("Token has expired")
 
-        if self.expiration - now > MAX_TOKEN_EXPIRATION_WINDOW:
+        if self.expiration - now > config.max_client_expiration_window:
             raise AuthError(
-                f"Token expiration is too far in the future. Max window is {MAX_TOKEN_EXPIRATION_WINDOW} seconds"
+                f"Token expiration is too far in the future. Max window is {config.max_client_expiration_window} seconds"
             )
 
     @property
@@ -140,11 +148,11 @@ class IAMBearerAuth(BearerAuth):
             raise AuthError(f"Invalid Token")
 
         try:
-            decrypted_token = KMS.decrypt(
-                KeyId=IAM_AUTH_KMS_KEY, CiphertextBlob=ciphertext
+            decrypted_token = clients.kms.decrypt(
+                KeyId=config.iam_auth_kms_key, CiphertextBlob=ciphertext
             )["Plaintext"].decode()
         except Exception as e:
-            LOGGER.exception(e)
+            logger.exception(e)
             raise AuthError(f"Invalid Token")
 
         try:
