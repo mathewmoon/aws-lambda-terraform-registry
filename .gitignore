@@ -4,7 +4,9 @@
 # Reference: https://intellij-support.jetbrains.com/hc/en-us/articles/206544839
 
 # User-specific stuff:
+terraform.tfvars
 terraform-module/submodules/lambda_function/lambda_build
+.temp/
 .idea/
 *.zip
 *.tar.gz

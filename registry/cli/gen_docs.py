@@ -36,7 +36,9 @@ def main():
             dump(docs, f, indent=2)
 
         if not (which("node") and which("npx") and which("tidy")):
-            print("Node.js, xmllint and tidy-html5 are required to build the documentation.")
+            print(
+                "Node.js, xmllint and tidy-html5 are required to build the documentation."
+            )
             exit(1)
 
         try:

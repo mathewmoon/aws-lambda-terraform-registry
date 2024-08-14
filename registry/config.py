@@ -5,8 +5,10 @@ from sys import stdout
 
 from boto3 import client, resource
 from botocore.config import Config
+from dynamojo import Lsi, Gsi, TableIndex, IndexList
 from fastapi import FastAPI
 from mangum import Mangum
+
 
 TABLE_NAME = environ.get("TABLE", "terraform-registry")
 TABLE = resource("dynamodb").Table(TABLE_NAME)
@@ -25,3 +27,4 @@ if not environ.get("AWS_LAMBDA_FUNCTION_NAME"):
     LOGGER.addHandler(StreamHandler(stdout))
 
 LOGGER.setLevel(environ.get("LOG_LEVEL", "INFO"))
+NO_VERIFY_JWT_EXP = True if environ.get("NO_VERIFY_JWT_EXP") else False

@@ -112,7 +112,5 @@ variable "certificate_arn" {
 variable "lambda_layers" {
   description = "The ARNs of the Lambda layers to attach to the registry Lambda function"
   type        = list(string)
-  default = [
-    "arn:aws:lambda:us-east-1:637423294718:layer:terraform-registry-deps:2"
-  ]
+  default     = []
 }

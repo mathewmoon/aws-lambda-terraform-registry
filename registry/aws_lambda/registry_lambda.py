@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import ValidationError
 
 from .. import routes
-from ..auth import parse_assumed_role
+from ..auth import parse_assumed_role, Operation
 from ..models.module import (
     Module,
     ModuleStorage,
@@ -64,7 +64,7 @@ async def discovery(request: Request) -> Response:
 
 
 @APP.get(routes.versions, response_model=VersionsResponse)
-@auth_wrapper("download")
+@auth_wrapper(Operation.download)
 async def get_versions(
     namespace: str, system: str, name: str, request: Request
 ) -> Response:
@@ -87,7 +87,7 @@ async def get_versions(
 
 
 @APP.get(routes.get_download_url, response_model=str, openapi_extra=url_response)
-@auth_wrapper("download")
+@auth_wrapper(Operation.download)
 async def get_download_url(
     namespace: str, system: str, name: str, version: str, request: Request
 ) -> Response:
@@ -105,7 +105,7 @@ async def get_download_url(
 
 
 @APP.post(routes.create, response_model=Module)
-@auth_wrapper("upload")
+@auth_wrapper(Operation.upload)
 async def create_module(
     namespace: str,
     system: str,
