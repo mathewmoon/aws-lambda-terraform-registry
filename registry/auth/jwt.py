@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-from __future__ import annotations
-
 from base64 import urlsafe_b64decode
 from cryptography.hazmat.primitives import serialization
 from enum import auto, StrEnum
 from fnmatch import fnmatch
-from json import dumps, loads
+from json import loads
 from re import compile
-import jwt.algorithms
 from typing import Any, Optional, Self
+
+import jwt.algorithms
+import requests
 
 from jwt.exceptions import (
     DecodeError,
@@ -97,37 +97,108 @@ class JWTAuth(Auth):
     def jwt(self):
         return self.token
 
+    def get_remote_jwks(self):
+        # Use an explicit URL first
+        url = self.grant.get("jwks_endpoint")
+
+        if not url:
+            try:
+                # Turns out not everyone plays by the rules and .well-known/jwks.json
+                # could be anything so we need to fetch from openid-configuration instead
+                # I'm talking to you GitHub.
+                res = requests.get(f"{self.issuer}/.well-known/openid-configuration")
+                res.raise_for_status()
+                url = res.json().get("jwks_uri")
+            except requests.exceptions.HTTPError:
+                raise AuthError(
+                    f"Error fetching openid-configuration from {self.issuer}",
+                    status=401,
+                )
+
+        if not url:
+            raise AuthError(
+                f"No OpenID Connect configuration endpoint found for issuer {self.issuer}",
+                status=401,
+            )
+
+        try:
+            res = requests.get(url)
+            jwks = res.json()
+            res.raise_for_status()
+        except (KeyError, requests.exceptions.HTTPError) as e:
+            raise AuthError(
+                f"Error fetching openid-configuration from {self.issuer}", status=401
+            )
+        except Exception as e:
+            logger.error(f"Error fetching JWKS from {url}: {e}")
+            raise e
+
+        return jwks
+
+    def get_jwk_from_jwks(self, jwks: dict, kid: str):
+        for k in jwks["keys"]:
+            if k["kid"] == kid:
+                return k
+
+    def update_jwks(self, keys: dict) -> dict:
+        res = self.get_remote_jwks()
+
+        if old_jwks := res.get("jwks"):
+            old_jwks["keys"] += keys
+
+        res = self.create_grant(
+            namespace=self.namespace,
+            issuer=self.issuer,
+            subject=self.subject,
+            permissions=self.permissions,
+            bound_claims=self.bound_claims,
+            jwks=res,
+        )
+
+        return res["jwks"]
+
     @property
     def signing_key(self):
-        # TODO: Update jwks from http if key not present
-        res = self.grant.get("jwks")
-        key = None
-        kid = self.unverified_payload[0]["kid"]
-
         if key := PUB_KEY_CACHE.get(self.issuer, {}).get(kid):
             return key
 
-        try:
-            if res:
-                res["keys"] = [x for x in res["keys"] if x["kid"] == kid]
-                if res["keys"]:
-                    jwks = dumps(res["keys"][0])
-                    pub_key = jwt.algorithms.RSAAlgorithm.from_jwk(jwks)
-                    key = pub_key.public_bytes(
-                        encoding=serialization.Encoding.PEM,
-                        format=serialization.PublicFormat.SubjectPublicKeyInfo,
-                    )
+        jwks = self.grant.get("jwks", {"keys": []})
+        kid = self.unverified_payload[0]["kid"]
 
-            if not res:
-                client = jwt.PyJWKClient(self.issuer)
-                key = client.get_signing_key_from_jwt(self.jwt).key
-        except (IndexError, KeyError):
-            logger.debug(f"Key not found in JWKS")
+        jwk = self.get_jwk_from_jwks(jwks, kid)
+
+        # If the key isn't there, then fetch the remote jwks
+        # and try again
+        if not jwk:
+            res = self.get_remote_jwks()
+            jwks["keys"] += res["keys"]
+
+            if jwks != self.grant.get("jwks"):
+                self.update_jwks(jwks["keys"])
+
+            jwk = self.get_jwk_from_jwks(jwks, kid)
+
+        if not jwk:
+            raise AuthError(
+                f"Key {kid} not found in JWKS for issuer {self.issuer}", status=401
+            )
+
+        try:
+            pub_key = jwt.algorithms.RSAAlgorithm.from_jwk(jwk)
+            key = pub_key.public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo,
+            )
+
+        except jwt.exceptions.PyJWTError as e:
+            logger.debug(f"Error decoding private key for issuer {self.issuer}")
+            raise AuthError(
+                f"Error decoding private key for issuer {self.issuer}", status=401
+            )
+
         except Exception as e:
             logger.error(f"Error getting key: {e}")
-
-        if key is None:
-            raise AuthError("Invalid issuer", status=401)
+            raise e
 
         if self.issuer not in PUB_KEY_CACHE:
             PUB_KEY_CACHE[self.issuer] = {kid: key}
@@ -143,12 +214,6 @@ class JWTAuth(Auth):
     @property
     def bound_claims(self):
         return [BoundClaim(**claim) for claim in self.grant.get("bound_claims", [])]
-
-    def validate_bound_claims(
-        self,
-    ) -> None:
-        for claim in self.bound_claims:
-            claim.validate_claim(self.verified_payload)
 
     @property
     def verified_payload(self):
@@ -174,7 +239,7 @@ class JWTAuth(Auth):
 
     @property
     def aud(self):
-        return self.unverified_payload[1]["aud"]
+        return self.verified_payload[1]["aud"]
 
     @classmethod
     def make_token(cls):
@@ -205,6 +270,9 @@ class JWTAuth(Auth):
             logger.debug(f"JWT Error: {e}")
             raise AuthError(status=401, detail="Invalid token")
 
+        for claim in self.bound_claims:
+            claim.validate_claim(data)
+
         return data
 
     def validate(self) -> Self:
@@ -214,11 +282,6 @@ class JWTAuth(Auth):
 
         if self.jwt not in AUTH_CACHE:
             AUTH_CACHE[self.jwt] = self.decode_jwt()
-
-            return AUTH_CACHE[self.jwt]
-
-        self.validate_bound_claims()
-        AUTH_CACHE[self.jwt] = self.decode_jwt()
 
         return self
 
