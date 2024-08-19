@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-from abc import ABC, abstractmethod
 from base64 import b64encode, b64decode
 from json import dumps, loads, JSONDecodeError
 from time import time

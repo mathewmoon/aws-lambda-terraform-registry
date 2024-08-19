@@ -39,7 +39,7 @@ class RegistryConfig(BaseModel):
     base_url: str = "/v1/modules"
     iam_auth_kms_key: str = "alias/terraform-registry"
     disable_auth: bool = False
-    no_verify_jwt_exp: bool = False
+    no_verify_jwt_exp: bool = True
     log_level: str = "INFO"
 
     @field_validator("max_token_expration_window")
@@ -56,8 +56,6 @@ class Clients:
         self.__table = resource("dynamodb").Table(self.config.table_name)
         self.__s3 = client("s3", config=Config(signature_version="s3v4"))
         self.__kms = client("kms")
-        self.__app = FastAPI()
-        self.__mangum = Mangum(self.__app, lifespan="off")
 
     def __new__(cls, *args, **kwargs):
         if not cls.instance:
@@ -76,14 +74,6 @@ class Clients:
     @property
     def kms(self):
         return self.__kms
-
-    @property
-    def app(self):
-        return self.__app
-
-    @property
-    def mangum(self):
-        return self.__mangum
 
 
 logger = getLogger(__name__)

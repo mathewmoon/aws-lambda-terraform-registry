@@ -5,7 +5,6 @@ from typing import Self
 from pydantic import BaseModel, model_validator
 
 
-from .exceptions import AuthError
 from ..globals import Clients
 
 
@@ -237,7 +236,6 @@ def parse_assumed_role(role_arn):
     role_parts.pop(-1)
 
     if role_parts[-1].startswith("AWSReservedSSO_"):
-        print("SSO")
         role_parts[-1] = f"aws-reserved/sso.amazonaws.com/{role_parts[-1]}"
 
     role_arn = "/".join(role_parts)

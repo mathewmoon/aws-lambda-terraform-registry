@@ -2,8 +2,9 @@
 from json import dumps
 from typing import Any
 
-from fastapi import Request
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
+from mangum import Mangum
 
 from pydantic import ValidationError
 
@@ -18,17 +19,18 @@ from ..models.responses import (
     VersionsResponse,
     url_response,
 )
-from ..globals import Clients, logger, RegistryConfig
+from ..globals import logger, RegistryConfig
 from ..auth.bearer import IAMBearerAuth
 from ..auth.middleware import auth_wrapper
 from ..auth.exceptions import AuthError
 
 
-clients = Clients()
 config = RegistryConfig()
+app = FastAPI()
+mangum = Mangum(app, lifespan="off")
 
 
-@clients.app.exception_handler(Exception)
+@app.exception_handler(Exception)
 def custom_exceptions(_: Any, e: Exception):
     if isinstance(e, ValidationError):
         try:
@@ -50,7 +52,7 @@ def custom_exceptions(_: Any, e: Exception):
     )
 
 
-@clients.app.get(routes.well_known, response_model=DiscoveryResponse)
+@app.get(routes.well_known, response_model=DiscoveryResponse)
 async def discovery(request: Request) -> Response:
     """
     Endpoint for serving the Terraform discovery JSON.
@@ -63,7 +65,7 @@ async def discovery(request: Request) -> Response:
     return JSONResponse(status_code=200, content=data)
 
 
-@clients.app.get(routes.versions, response_model=VersionsResponse)
+@app.get(routes.versions, response_model=VersionsResponse)
 @auth_wrapper(Operation.download)
 async def get_versions(
     namespace: str, system: str, name: str, request: Request
@@ -86,9 +88,7 @@ async def get_versions(
     )
 
 
-@clients.app.get(
-    routes.get_download_url, response_model=str, openapi_extra=url_response
-)
+@app.get(routes.get_download_url, response_model=str, openapi_extra=url_response)
 @auth_wrapper(Operation.download)
 async def get_download_url(
     namespace: str, system: str, name: str, version: str, request: Request
@@ -106,7 +106,7 @@ async def get_download_url(
     return Response(status_code=204, headers={"X-Terraform-Get": url})
 
 
-@clients.app.post(routes.create, response_model=Module)
+@app.post(routes.create, response_model=Module)
 @auth_wrapper(Operation.upload)
 async def create_module(
     namespace: str,
@@ -137,9 +137,7 @@ async def create_module(
     return JSONResponse(status_code=201, content=module.model_dump())
 
 
-@clients.app.get(
-    routes.iam_token_endpoint, response_model=str, openapi_extra=url_response
-)
+@app.get(routes.iam_token_endpoint, response_model=str, openapi_extra=url_response)
 def get_token(request: Request) -> str:
     """
     Endpoint for generating temporary credentials based on IAM auth. Requests to this endpoint
@@ -178,10 +176,10 @@ def handler(event, ctx):
     Returns:
         Any: The response from the Mangum handler.
     """
-    logger.debug(dumps(event, indent=2, default=lambda x: str(x)))
+    logger.info(dumps(event, indent=2, default=lambda x: str(x)))
 
-    res = clients.mangum(event, ctx)
+    res = mangum(event, ctx)
 
-    logger.debug(dumps(res, indent=2, default=lambda x: str(x)))
+    logger.info(dumps(res, indent=2, default=lambda x: str(x)))
 
     return res
