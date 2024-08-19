@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
 
-from ..config import S3, LOGGER, TABLE
+from ..globals import logger, Clients
 
 
 class ModuleStorage(BaseModel):
@@ -63,17 +63,17 @@ class Module(BaseModel, extra="ignore"):
     @classmethod
     def get_checksum(cls, *, bucket: str, key: str):
         try:
-            res = S3.get_object_attributes(
+            res = Clients().s3.get_object_attributes(
                 Bucket=bucket, Key=key, ObjectAttributes=["Checksum"]
             )
             return res["Checksum"]["ChecksumSHA256"]
         except KeyError:
-            LOGGER.error(f"No checksum found for {bucket}/{key}")
+            logger.error(f"No checksum found for {bucket}/{key}")
             raise ValueError(
                 "Checksum not found. Make sure your object contains a SHA256 checksum."
             )
         except ClientError as e:
-            LOGGER.error(f"Client error when getting checksum for {bucket}/{key}: {e}")
+            logger.error(f"Client error when getting checksum for {bucket}/{key}: {e}")
 
             if "Access Denied" in str(e):
                 raise ValueError(
@@ -83,8 +83,8 @@ class Module(BaseModel, extra="ignore"):
             else:
                 raise Exception(e)
         except (
-            S3.exceptions.NoSuchKey,
-            S3.exceptions.NoSuchBucket,
+            Clients().s3.exceptions.NoSuchKey,
+            Clients().s3.exceptions.NoSuchBucket,
         ):
             raise ValueError(f"Backend object {key} does not exist in bucket {bucket}")
 
@@ -104,7 +104,7 @@ class Module(BaseModel, extra="ignore"):
         """
         sk = cls.get_sk(namespace=namespace, system=system, name=name)
 
-        res = TABLE.query(
+        res = Clients().table.query(
             KeyConditionExpression=Key("pk").eq(namespace) & Key("sk").begins_with(sk),
         )["Items"]
 
@@ -134,13 +134,13 @@ class Module(BaseModel, extra="ignore"):
             namespace=namespace, system=system, name=name, version=version
         )
 
-        res = TABLE.get_item(Key=key).get("Item")
+        res = Clients().table.get_item(Key=key).get("Item")
 
         if res:
             return cls(**res)
 
     def presigned_url(self, *, expires_in=30):
-        url = S3.generate_presigned_url(
+        url = Clients().s3.generate_presigned_url(
             "get_object",
             Params={
                 "Bucket": self.bucket,
@@ -165,4 +165,4 @@ class Module(BaseModel, extra="ignore"):
                 Attr("pk").not_exists() & Attr("sk").not_exists()
             )
 
-        TABLE.put_item(**opts)
+        Clients().table.put_item(**opts)

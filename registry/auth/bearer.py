@@ -22,7 +22,7 @@ class BearerAuth(Auth):
     Handles simple Bearer Auth using static, non-expiring, tokens
     """
 
-    min_token_length = 64
+    min_token_length: int = 64
 
     @model_validator(mode="after")
     def validate(self) -> Self:
@@ -71,9 +71,7 @@ class IAMBearerAuth(BearerAuth):
 
     @classmethod
     def make_token(
-        cls,
-        role_arn: str,
-        expiration_seconds: int = config.max_client_expiration_window,
+        cls, role_arn: str, expiration_seconds: int = config.max_token_expration_window
     ):
         """
         Creates a token for the given role ARN with an expiration time.
@@ -83,9 +81,9 @@ class IAMBearerAuth(BearerAuth):
         :return: The generated token.
         :raises AuthError: If the expiration window is too large.
         """
-        if expiration_seconds > config.max_client_expiration_window:
+        if expiration_seconds > config.max_token_expration_window:
             raise ValueError(
-                f"Expiration window is too large. Max is {config.max_client_expiration_window} seconds",
+                f"Expiration window is too large. Max is {config.max_token_expration_window} seconds",
             )
 
         now = int(time())
@@ -115,9 +113,9 @@ class IAMBearerAuth(BearerAuth):
         if now > self.expiration:
             raise AuthError("Token has expired")
 
-        if self.expiration - now > config.max_client_expiration_window:
+        if self.expiration - now > config.max_token_expration_window:
             raise AuthError(
-                f"Token expiration is too far in the future. Max window is {config.max_client_expiration_window} seconds"
+                f"Token expiration is too far in the future. Max window is {config.max_token_expration_window} seconds"
             )
 
     @property
@@ -175,17 +173,3 @@ class IAMBearerAuth(BearerAuth):
         sort key.
         """
         return self.role_arn
-
-
-def get_auth_type(token):
-    """
-    A factory for returing Auth subclasses based on the token
-    characteristics.
-    """
-    cls_name = token.split("~")[0]
-    try:
-        cls = globals()[cls_name]
-        assert issubclass(cls, Auth)  # Extremely important to prevent code injection
-        return cls
-    except (KeyError, AssertionError):
-        raise AuthError(f"Invalid token type {cls_name}")

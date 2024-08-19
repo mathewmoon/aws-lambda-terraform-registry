@@ -3,11 +3,11 @@ from typing import TypedDict
 
 from pydantic import BaseModel
 
-from ..config import BASE_URI
+from ..globals import RegistryConfig
 
 
 class DiscoveryResponse(TypedDict):
-    modules_v1: str = BASE_URI
+    modules_v1: str = RegistryConfig().base_url
 
 
 class _VersionObj(TypedDict):

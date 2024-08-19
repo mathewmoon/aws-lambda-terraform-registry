@@ -4,7 +4,6 @@
 class AuthError(Exception):
     def __init__(self, *args, status=401, **kwargs):
         self.status = status
-        super().__init__(*args, **kwargs)
 
     @property
     def response(self):

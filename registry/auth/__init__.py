@@ -4,6 +4,8 @@ from enum import auto, StrEnum
 from typing import Self
 from pydantic import BaseModel, model_validator
 
+
+from .exceptions import AuthError
 from ..globals import Clients
 
 
@@ -24,7 +26,11 @@ class Operation(StrEnum):
     delete_grant = auto()
 
 
-class Auth(BaseModel, ABC):
+class _AuthBase:
+    pass
+
+
+class Auth(BaseModel, ABC, _AuthBase):
     token: str
     namespace: str
 

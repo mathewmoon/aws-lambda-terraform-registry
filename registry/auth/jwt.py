@@ -3,6 +3,7 @@ from base64 import urlsafe_b64decode
 from cryptography.hazmat.primitives import serialization
 from enum import auto, StrEnum
 from fnmatch import fnmatch
+from functools import cached_property
 from json import loads
 from re import compile
 from typing import Any, Optional, Self
@@ -20,7 +21,7 @@ from jwt.exceptions import (
     MissingRequiredClaimError,
 )
 import jwt
-from pydantic import BaseModel, PrivateAttr
+from pydantic import BaseModel, field_validator, computed_field
 
 from . import Auth, Permissions
 from .exceptions import AuthError
@@ -55,15 +56,27 @@ class BoundClaim(BaseModel):
 
 
 class JWTAuth(Auth):
-    _grant: dict[str, Any] = PrivateAttr()
+    @computed_field
+    @cached_property
+    def grant(self) -> dict[str, Any]:
+        res = self.get_grant(
+            namespace=self.namespace,
+            issuer=self.unverified_payload["iss"],
+            subject=self.unverified_payload["sub"],
+        )
+        return res
+
+    @field_validator("token")
+    def strip_prefix(cls, token: str):
+        return token.replace(f"{cls.__name__}~", "").strip()
 
     @property
     def issuer(self):
-        return self.unverified_payload[1]["iss"]
+        return self.grant["issuer"]
 
     @property
     def subject(self):
-        return self.unverified_payload[1]["sub"]
+        return self.grant["subject"]
 
     @property
     def identifier(self):
@@ -72,6 +85,8 @@ class JWTAuth(Auth):
     @classmethod
     def create_grant(
         cls,
+        *,
+        audience: str,
         namespace: str,
         issuer: str,
         subject: str,
@@ -81,6 +96,7 @@ class JWTAuth(Auth):
     ):
         identifier = cls.get_identifier(issuer=issuer, subject=subject)
         opts = {
+            "audience": audience,
             "namespace": namespace,
             "identifier": identifier,
             "issuer": issuer,
@@ -153,17 +169,19 @@ class JWTAuth(Auth):
             permissions=self.permissions,
             bound_claims=self.bound_claims,
             jwks=res,
+            audience=self.audience,
         )
 
         return res["jwks"]
 
     @property
     def signing_key(self):
-        if key := PUB_KEY_CACHE.get(self.issuer, {}).get(kid):
+        kid = self.header["kid"]
+        issuer = self.unverified_payload["iss"]
+        if key := PUB_KEY_CACHE.get(issuer, {}).get(kid):
             return key
 
         jwks = self.grant.get("jwks", {"keys": []})
-        kid = self.unverified_payload[0]["kid"]
 
         jwk = self.get_jwk_from_jwks(jwks, kid)
 
@@ -207,39 +225,28 @@ class JWTAuth(Auth):
 
         return key
 
-    @property
+    @cached_property
     def unverified_payload(self):
-        return self.get_unverified_payload(self.token)
+        return jwt.decode(self.token, options={"verify_signature": False})
 
-    @property
+    @cached_property
     def bound_claims(self):
         return [BoundClaim(**claim) for claim in self.grant.get("bound_claims", [])]
 
-    @property
+    @cached_property
     def verified_payload(self):
-        return self.validate()
-
-    @classmethod
-    def get_unverified_payload(self, token):
-        def get_padding(val):
-            return "=" * (-len(val) % 4)
-
-        try:
-            header, payload, _ = token.split(".")
-            header = loads(urlsafe_b64decode(f"{header}{get_padding(header)}").decode())
-            payload = loads(
-                urlsafe_b64decode(f"{payload}{get_padding(payload)}").decode()
-            )
-            payload["kid"] = header["kid"]
-        except Exception as e:
-            logger.error(f"Error decoding token: {e}")
-            raise InvalidTokenError()
-
-        return header, payload
+        return self.decode_jwt()
 
     @property
-    def aud(self):
-        return self.verified_payload[1]["aud"]
+    def header(self):
+        header_str = self.token.split(".")[0]
+        padding = "=" * (-len(header_str) % 4)
+        header = loads(urlsafe_b64decode(f"{header_str}{padding}").decode())
+        return header
+
+    @property
+    def audience(self):
+        return self.grant["audience"]
 
     @classmethod
     def make_token(cls):
@@ -251,7 +258,7 @@ class JWTAuth(Auth):
             "jwt": self.jwt,
             "key": self.signing_key,
             "algorithms": ["RS256"],
-            "audience": self.aud,
+            "audience": self.audience,
             "options": {},
         }
         opts["options"]["verify_exp"] = not config.no_verify_jwt_exp
@@ -268,7 +275,8 @@ class JWTAuth(Auth):
             DecodeError,
         ) as e:
             logger.debug(f"JWT Error: {e}")
-            raise AuthError(status=401, detail="Invalid token")
+            msg = str(e).replace("jwt.exceptions.", "")
+            raise AuthError(msg, status=401)
 
         for claim in self.bound_claims:
             claim.validate_claim(data)
@@ -276,14 +284,11 @@ class JWTAuth(Auth):
         return data
 
     def validate(self) -> Self:
-        self._grant = self.get_grant(
-            namespace=self.namespace, issuer=self.issuer, subject=self.subject
-        )
+        if self.grant is None:
+            raise AuthError("Not authorized", status=401)
 
-        if self.jwt not in AUTH_CACHE:
-            AUTH_CACHE[self.jwt] = self.decode_jwt()
-
-        return self
+        data = self.decode_jwt()
+        return data
 
     @classmethod
     def get_grant(cls, *, namespace: str, issuer: str, subject: str):
@@ -294,4 +299,5 @@ class JWTAuth(Auth):
         """
         identifier = cls.get_identifier(issuer=issuer, subject=subject)
         res = super().get_grant(namespace=namespace, identifier=identifier)
+
         return res
