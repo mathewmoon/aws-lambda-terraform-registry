@@ -58,8 +58,9 @@ async def discovery(request: Request) -> Response:
     Returns:
         dict: The Terraform discovery JSON.
     """
-    data = JSONResponse(status_code=200, content=DiscoveryResponse().model_dump())
-    return data
+    data = {"modules.v1": config.base_url}
+
+    return JSONResponse(status_code=200, content=data)
 
 
 @clients.app.get(routes.versions, response_model=VersionsResponse)
