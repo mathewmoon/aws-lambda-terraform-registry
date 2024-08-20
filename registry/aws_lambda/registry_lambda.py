@@ -20,7 +20,7 @@ from ..models.responses import (
     url_response,
 )
 from ..globals import logger, RegistryConfig
-from ..auth.bearer import IAMBearerAuth
+from ..auth import make_token_for_iam
 from ..auth.middleware import auth_wrapper
 from ..auth.exceptions import AuthError
 
@@ -158,7 +158,7 @@ def get_token(request: Request) -> str:
         params.get("expiration_seconds", config.max_token_expration_window)
     )
 
-    token = IAMBearerAuth.make_token(
+    token = make_token_for_iam(
         role_arn=role_arn,
         expiration_seconds=expiration_seconds,
     )

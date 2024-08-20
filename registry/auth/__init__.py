@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 from abc import ABC, abstractmethod
+from base64 import urlsafe_b64encode
 from enum import auto, StrEnum
+from json import dumps
+from time import time
 from typing import Self
 from pydantic import BaseModel, model_validator
 
+from boto3.dynamodb.types import Binary
 
-from ..globals import Clients
-
-
-clients = Clients()
+from ..globals import Clients, RegistryConfig
 
 
 class Permissions(BaseModel):
@@ -63,17 +64,6 @@ class Auth(BaseModel, ABC, _AuthBase):
         """
         raise NotImplementedError
 
-    @classmethod
-    @abstractmethod
-    def make_token(cls):
-        """
-        Abstract class method to create a token.
-        Must be implemented by subclasses.
-
-        :raises NotImplementedError: If not implemented in subclass.
-        """
-        raise NotImplementedError
-
     @property
     def grant(self):
         """
@@ -82,7 +72,7 @@ class Auth(BaseModel, ABC, _AuthBase):
         :return: The item dictionary.
         """
         key = self.get_db_key(namespace=self.namespace, identifier=self.identifier)
-        res = clients.table.get_item(Key=key).get("Item")
+        res = Clients().table.get_item(Key=key).get("Item")
 
         return res
 
@@ -117,7 +107,7 @@ class Auth(BaseModel, ABC, _AuthBase):
         :return: The item dictionary.
         """
         key = cls.get_db_key(namespace=namespace, identifier=identifier)
-        res = clients.table.get_item(Key=key).get("Item")
+        res = Clients().table.get_item(Key=key).get("Item")
         return res
 
     @classmethod
@@ -135,6 +125,9 @@ class Auth(BaseModel, ABC, _AuthBase):
 
         if isinstance(item, StrEnum):
             item = item.value
+
+        if isinstance(item, Binary):
+            item = bytes(item)
 
         return item
 
@@ -166,14 +159,14 @@ class Auth(BaseModel, ABC, _AuthBase):
             **kwargs,
         }
 
-        clients.table.put_item(Item=item)
+        Clients().table.put_item(Item=item)
 
         return item
 
     @classmethod
     def delete_grant(cls, *, namespace: str, identifier: str):
         key = cls.get_db_key(namespace=namespace, identifier=identifier)
-        clients.table.delete_item(Key=key)
+        Clients().table.delete_item(Key=key)
 
     @classmethod
     def update_permissions(
@@ -241,3 +234,54 @@ def parse_assumed_role(role_arn):
     role_arn = "/".join(role_parts)
 
     return role_arn
+
+
+def make_token_for_iam(
+    role_arn: str, expiration_seconds: int = RegistryConfig().max_token_expration_window
+):
+    """
+    Creates a token for the given role ARN with an expiration time.
+
+    :param role_arn: The Amazon Resource Name (ARN) of the role.
+    :param expiration_seconds: The number of seconds until the token expires.
+    :return: The generated token.
+    :raises AuthError: If the expiration window is too large.
+    """
+    if expiration_seconds > RegistryConfig().max_token_expration_window:
+        raise ValueError(
+            f"Expiration window is too large. Max is {RegistryConfig().max_token_expration_window} seconds",
+        )
+
+    now = int(time())
+    expiration = now + expiration_seconds
+
+    opts = {
+        "aud": RegistryConfig().hostname,
+        "expiration_hours": expiration,
+        "iss": RegistryConfig().jwt_issuer,
+        "sub": role_arn,
+    }
+
+    header = (
+        urlsafe_b64encode(
+            dumps(
+                {"kid": f"kms:{RegistryConfig().iam_auth_kms_key}", "alg": "RS256"}
+            ).encode()
+        )
+        .decode()
+        .rstrip("=")
+    )
+    payload = urlsafe_b64encode(dumps(opts).encode()).decode().rstrip("=")
+    message = f"{header}.{payload}"
+
+    res = Clients().kms.sign(
+        KeyId=RegistryConfig().iam_auth_kms_key,
+        Message=message.encode(),
+        MessageType="RAW",
+        SigningAlgorithm="RSASSA_PKCS1_V1_5_SHA_256",
+    )["Signature"]
+
+    signature = urlsafe_b64encode(res).decode().rstrip("=")
+    token = f"{message}.{signature}"
+
+    return token

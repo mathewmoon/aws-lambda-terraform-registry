@@ -21,12 +21,12 @@ from jwt.exceptions import (
     MissingRequiredClaimError,
 )
 import jwt
-from pydantic import BaseModel, field_validator, computed_field
+from pydantic import BaseModel, computed_field
 
 from . import Auth, Permissions
 from .exceptions import AuthError
 
-from ..globals import logger, RegistryConfig
+from ..globals import logger, Clients, RegistryConfig
 
 
 AUTH_CACHE = {}
@@ -65,10 +65,6 @@ class JWTAuth(Auth):
             subject=self.unverified_payload["sub"],
         )
         return res
-
-    @field_validator("token")
-    def strip_prefix(cls, token: str):
-        return token.replace(f"{cls.__name__}~", "").strip()
 
     @property
     def issuer(self):
@@ -174,9 +170,21 @@ class JWTAuth(Auth):
 
         return res["jwks"]
 
+    def get_kms_pub_key(self, kid: str):
+        if key := KMSPubKey.get(kid=kid):
+            return key.public_key
+        raise AuthError("No valid JWKS found", status=401)
+
     @property
     def signing_key(self):
         kid = self.header["kid"]
+        if kid.startswith("kms:"):
+            try:
+                key = self.get_kms_pub_key(kid.replace("kms:", ""))
+                return key
+            except Exception as e:
+                logger.error(f"Error getting key: {e}")
+
         issuer = self.unverified_payload["iss"]
         if key := PUB_KEY_CACHE.get(issuer, {}).get(kid):
             return key
@@ -248,10 +256,6 @@ class JWTAuth(Auth):
     def audience(self):
         return self.grant["audience"]
 
-    @classmethod
-    def make_token(cls):
-        pass
-
     def decode_jwt(self):
         opts = {
             "issuer": self.issuer,
@@ -288,6 +292,7 @@ class JWTAuth(Auth):
             raise AuthError("Not authorized", status=401)
 
         data = self.decode_jwt()
+
         return data
 
     @classmethod
@@ -301,3 +306,43 @@ class JWTAuth(Auth):
         res = super().get_grant(namespace=namespace, identifier=identifier)
 
         return res
+
+
+class KMSPubKey(BaseModel):
+    kid: str
+    key: bytes
+
+    @classmethod
+    def create(cls, *, kid: str):
+        res = Clients().kms.get_public_key(KeyId=kid)
+        key_bytes = res["PublicKey"]
+
+        key = {
+            "pk": "__SYSTEM__",
+            "sk": f"{cls.__name__}~{kid}",
+        }
+        item = {
+            **key,
+            "kid": kid,
+            "key": key_bytes,
+        }
+        res = Clients().table.put_item(Item=item)
+        return cls.get(kid=kid)
+
+    @classmethod
+    def get(cls, *, kid: str):
+        key = {
+            "pk": "__SYSTEM__",
+            "sk": f"{cls.__name__}~{kid}",
+        }
+        if res := Clients().table.get_item(Key=key).get("Item"):
+            res = Auth.unmarshall(res)
+            return cls(**res)
+
+    @property
+    def pem(self):
+        return self.key.decode()
+
+    @cached_property
+    def public_key(self):
+        return serialization.load_der_public_key(self.key)

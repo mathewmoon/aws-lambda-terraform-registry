@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-from functools import wraps
+from functools import wraps, lru_cache
 from typing import Any, Callable
 
 from fastapi import Request
-
-from . import Auth, _AuthBase
+from jwt import decode as jwt_decode
+from . import Auth
+from .jwt import JWTAuth
 from .exceptions import AuthError
 from ..globals import RegistryConfig
 
@@ -89,17 +90,22 @@ def auth_wrapper(*perms: str) -> Callable:
     return wrapper
 
 
+def is_jwt_auth(token: str) -> bool:
+    """
+    Returns True if the token appears to be a JWT token.
+    """
+    try:
+        jwt_decode(token, options={"verify_signature": False})
+        return True
+    except Exception:
+        return False
+
+
+@lru_cache(maxsize=64)
 def get_auth_type(token):
     """
     A factory for returing Auth subclasses based on the token
     characteristics.
     """
-    cls_name = token.split("~")[0]
-    try:
-        cls = globals()[cls_name]
-        assert issubclass(
-            cls, _AuthBase
-        )  # Extremely important to prevent code injection
-        return cls
-    except (KeyError, AssertionError):
-        raise AuthError(f"Invalid token type {cls_name}")
+    if is_jwt_auth(token):
+        return JWTAuth
